@@ -2,7 +2,8 @@ Bienvenidos al Segundo Proyecto de la catedra "Sistemas Distribuidos"
 
 primer paso
 
-ejecutar docker compose up -d para cargar todo
+ejecutar docker compose -f compose-servidor-emqx.yaml up para cargar todo
+(revisar como poner el -d)
 
 luego si queres ver el dashboard ejecuta
 http/localhost:18083/
