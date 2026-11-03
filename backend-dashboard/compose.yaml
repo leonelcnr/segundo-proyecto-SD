@@ -1,0 +1,14 @@
+services:
+  receptor-dashboard:
+    build: .
+    container_name: receptor-dashboard
+    restart: unless-stopped
+    env_file: .env
+    ports:
+      # Solo en la IP de Tailscale del server; sin TAILSCALE_IP queda en localhost
+      - "${TAILSCALE_IP:-127.0.0.1}:3000:3000"
+    volumes:
+      - dashboard-data:/app/data
+
+volumes:
+  dashboard-data:
