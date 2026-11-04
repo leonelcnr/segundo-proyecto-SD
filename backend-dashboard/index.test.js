@@ -10,31 +10,39 @@ const ADMIN = { usuario: "admin", clave: "clave-de-prueba", secreto: "firma-de-p
 
 // publicar: reemplaza al cliente MQTT. Por defecto anota lo publicado en `publicados`.
 async function levantar(dataDir, publicar) {
+
   const publicados = [];
   publicar ??= async (topic, mensaje) => publicados.push({ topic, mensaje });
   const { app, eventos } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
+
   const post = (ruta, body, token = TOKEN) =>
     fetch(base + ruta, {
       method: "POST",
       headers: { "content-type": "application/json", ...(token && { authorization: `Bearer ${token}` }) },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
+
   const cerrar = () => {
     server.close();
     server.closeAllConnections(); // los streams SSE quedan abiertos si no
   };
+
   // Inicia sesión y devuelve la cookie con el JWT
   const login = async (username = ADMIN.usuario, password = ADMIN.clave) => {
     const res = await post("/login", { username, password }, null);
     return { status: res.status, cookie: (res.headers.get("set-cookie") || "").split(";")[0] };
   };
+
+
   return { base, post, login, eventos, publicados, cerrar };
 }
 
+
 test("receptor de webhooks", async (t) => {
+
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "receptor-"));
   const r = await levantar(dir);
   t.after(r.cerrar);
@@ -77,7 +85,9 @@ test("receptor de webhooks", async (t) => {
   });
 });
 
+
 test("arranca aunque la última línea del log haya quedado cortada", async (t) => {
+
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "receptor-"));
   const sano = { tipo: "alerta", recibido: new Date().toISOString(), datos: { clientid: "a" } };
   fs.writeFileSync(path.join(dir, "eventos.jsonl"), JSON.stringify(sano) + '\n{"tipo":"aler');
@@ -91,9 +101,11 @@ test("arranca aunque la última línea del log haya quedado cortada", async (t) 
   const r2 = await levantar(dir);
   t.after(r2.cerrar);
   assert.deepEqual(r2.eventos.map((e) => e.datos.clientid), ["a", "b"]);
+
 });
 
 test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", async (t) => {
+
   const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
   t.after(r.cerrar);
 
@@ -116,9 +128,11 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   await r.post("/webhook/reglas/alertas", { clientid: "intruso" });
   assert.equal((await siguiente()).alertas[0].clientid, "intruso");
   await lector.cancel();
+
 });
 
 test("login del admin", async (t) => {
+
   const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
   t.after(r.cerrar);
   const me = (cookie) => fetch(r.base + "/me", { headers: cookie ? { cookie } : {} });

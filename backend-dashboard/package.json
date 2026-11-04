@@ -4,7 +4,8 @@
   "main": "index.js",
   "scripts": {
     "start": "node index.js",
-    "test": "node --test"
+    "test": "node --test",
+    "simular": "node simulador.js"
   },
   "dependencies": {
     "express": "^5.1.0",

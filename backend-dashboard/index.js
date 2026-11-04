@@ -4,7 +4,9 @@ const { crearWebhooks } = require("./routes/webhooks");
 const { crearDashboard } = require("./routes/dashboard");
 const { crearAuth } = require("./routes/auth");
 
+
 function crearApp({ token, dataDir, admin, publicar }) {
+
   const auth = crearAuth(admin);
   // Cada aviso nuevo que llega por webhook se reenvía a los navegadores conectados.
   // dashboard se crea en la línea de abajo; alGuardar recién se llama cuando llega un aviso.
@@ -12,6 +14,7 @@ function crearApp({ token, dataDir, admin, publicar }) {
   const dashboard = crearDashboard({ eventos: webhooks.eventos, verificarToken: auth.verificarToken, publicar });
 
   const app = express();
+
   app.use(express.json({ limit: "64kb" }));
   app.use("/webhook", webhooks.router);
   app.use("/", auth.router);
@@ -25,9 +28,12 @@ function crearApp({ token, dataDir, admin, publicar }) {
   return { app, eventos: webhooks.eventos };
 }
 
+
 module.exports = { crearApp };
 
+
 if (require.main === module) {
+
   const { app } = crearApp({
     token: process.env.WEBHOOK_TOKEN,
     dataDir: path.join(__dirname, "data"),
@@ -37,5 +43,6 @@ if (require.main === module) {
       throw new Error("MQTT todavía no está conectado");
     },
   });
+
   app.listen(3000, () => console.log("Receptor escuchando en :3000"));
 }
