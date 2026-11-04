@@ -3,7 +3,7 @@ const assert = require("node:assert");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
-const { crearApp } = require("./server");
+const { crearApp } = require("./index");
 
 const TOKEN = "secreto-de-prueba";
 
@@ -18,7 +18,11 @@ async function levantar(dataDir) {
       headers: { "content-type": "application/json", ...(token && { authorization: `Bearer ${token}` }) },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
-  return { post, eventos, cerrar: () => server.close() };
+  const cerrar = () => {
+    server.close();
+    server.closeAllConnections(); // los streams SSE quedan abiertos si no
+  };
+  return { base, post, eventos, cerrar };
 }
 
 test("receptor de webhooks", async (t) => {
@@ -59,6 +63,29 @@ test("receptor de webhooks", async (t) => {
     assert.equal(r2.eventos.length, 4);
     assert.equal((await (await r2.post("/webhook/eventos", conexion)).json()).duplicado, true);
   });
+});
+
+test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", async (t) => {
+  const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
+  t.after(r.cerrar);
+
+  const res = await fetch(r.base + "/stream");
+  assert.match(res.headers.get("content-type"), /^text\/event-stream/);
+  const lector = res.body.pipeThrough(new TextDecoderStream()).getReader();
+  const siguiente = async () => JSON.parse((await lector.read()).value.replace(/^data: /, ""));
+
+  assert.deepEqual(await siguiente(), { pendientes: [], dispositivos: [], alertas: [] });
+
+  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
+  const estado = await siguiente();
+  assert.equal(estado.pendientes[0].nombre, "Carlos");
+  assert.equal(estado.pendientes[0].estado, "pendiente");
+
+  // Un duplicado no se vuelve a mandar
+  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
+  await r.post("/webhook/reglas/alertas", { clientid: "intruso" });
+  assert.equal((await siguiente()).alertas[0].clientid, "intruso");
+  await lector.cancel();
 });
 
 test("no arranca sin token", () => {

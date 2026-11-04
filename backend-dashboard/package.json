@@ -1,9 +1,9 @@
 {
   "name": "receptor-dashboard",
   "private": true,
-  "main": "server.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node server.js",
+    "start": "node index.js",
     "test": "node --test"
   },
   "dependencies": {

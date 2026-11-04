@@ -256,7 +256,7 @@ Vistas de la página:
 - [ ] Pedir el usuario MQTT `dashboard` y su regla de ACL a quien configura EMQX.
 
 ### Fase 1: receptor mínimo (día 1-2)
-- [x] `package.json`, `server.js` con Express y las 3 rutas de webhook con verificación del token.
+- [x] `package.json`, `index.js` y `routes/webhooks.js` con Express y las 3 rutas de webhook con verificación del token.
 - [x] Persistencia en `data/eventos.jsonl` y recarga al arrancar.
 - [x] `Dockerfile` y `compose.yaml` con `restart: unless-stopped` y el volumen.
 - [x] Probar con `curl` (con y sin token: 200 y 401).
