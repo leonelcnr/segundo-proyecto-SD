@@ -225,14 +225,14 @@ No. Cada aviso recibido se agrega a `data/eventos.jsonl` (en el volumen) y se re
 
 ## 8. Diseño del receptor-dashboard (Node + Express)
 
-Dependencias: `express` y `mqtt`. Nada más: la UI es un HTML con JS plano y la actualización en vivo va por SSE (Server-Sent Events, nativo del navegador).
+Dependencias del servidor: `express` y `mqtt`. La UI es una app **React con Vite** en `backend-dashboard/web/`: se compila dentro del Dockerfile (build en dos etapas) y Express sirve `web/dist`, así que sigue siendo un solo container. La actualización en vivo va por SSE (`EventSource`, nativo del navegador). Sin Next.js, sin Nginx y sin librerías de estado. En desarrollo, Vite reenvía `/api`, `/stream` y `/login` al Express.
 
 | Ruta | Quién la llama | Qué hace |
 |---|---|---|
 | `POST /webhook/eventos` | EMQX (webhook directo) | verifica el token, guarda el evento, actualiza la tabla de dispositivos y lo emite por SSE |
 | `POST /webhook/reglas/pendientes` | EMQX (regla A) | verifica el token, deduplica por `req_id`, guarda y lo emite por SSE |
 | `POST /webhook/reglas/alertas` | EMQX (regla B) | verifica el token, guarda y lo emite por SSE |
-| `GET /` | admin | página del dashboard (requiere login) |
+| `GET /` | admin | app React compilada (`web/dist`); los datos piden login |
 | `GET /stream` | navegador | SSE con los avisos en vivo |
 | `POST /api/decision` | navegador | publica `{req_id, decision, admin}` en `admin/decision` (QoS 1) |
 | `POST /login`, `POST /logout` | admin | sesión |
@@ -256,10 +256,10 @@ Vistas de la página:
 - [ ] Pedir el usuario MQTT `dashboard` y su regla de ACL a quien configura EMQX.
 
 ### Fase 1: receptor mínimo (día 1-2)
-- [ ] `package.json`, `server.js` con Express y las 3 rutas de webhook con verificación del token.
-- [ ] Persistencia en `data/eventos.jsonl` y recarga al arrancar.
-- [ ] `Dockerfile` y `compose.yaml` con `restart: unless-stopped` y el volumen.
-- [ ] Probar con `curl` (con y sin token: 200 y 401).
+- [x] `package.json`, `server.js` con Express y las 3 rutas de webhook con verificación del token.
+- [x] Persistencia en `data/eventos.jsonl` y recarga al arrancar.
+- [x] `Dockerfile` y `compose.yaml` con `restart: unless-stopped` y el volumen.
+- [x] Probar con `curl` (con y sin token: 200 y 401).
 
 ### Fase 2: webhooks en EMQX (día 2-3)
 - [ ] Crear el conector HTTP con el header `Authorization`.
@@ -270,7 +270,7 @@ Vistas de la página:
 
 ### Fase 3: dashboard (día 3-5)
 - [ ] Login de admin.
-- [ ] Página con las 4 vistas y SSE.
+- [ ] App React con las 4 vistas y SSE, compilada en el Dockerfile.
 - [ ] Cliente MQTT por TLS que publica `admin/decision`.
 - [ ] Prueba de punta a punta con el servicio real: tarjeta sin permiso → aparece en el dashboard → Aceptar → se abre la puerta.
 
@@ -293,4 +293,5 @@ Vistas de la página:
 - ¿El servicio necesita saber **qué admin** decidió (para auditoría)? Por ahora mandamos el nombre en el payload.
 - ¿Timeout de 45 s? Depende de cuánto tiempo puede esperar el ESP32 con la persona en la puerta.
 - ¿El dashboard también debería poder **dar permisos permanentes**? Quedó fuera del alcance (solo "abrir ahora"). Si se suma, sería otro topic (`admin/permisos`) y lo valida el servicio.
+- **Log crudo en el dashboard (por confirmar):** ¿la vista "Log crudo" va sí o sí? Si va, falta exponer los avisos tal como llegaron (`eventos.jsonl`), con límite y detrás del login. `estado.js` hoy no lo arma.
 - Celular como NFC: Android necesita una app con HCE, y el UID que expone no es fijo, así que hay que identificar por AID y token. Lo resuelven quienes hacen el ESP32, pero conviene que el payload de `solicitud` no dependa solo de `uid`.
