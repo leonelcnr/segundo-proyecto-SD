@@ -6,9 +6,10 @@ const path = require("node:path");
 const { crearApp } = require("./index");
 
 const TOKEN = "secreto-de-prueba";
+const ADMIN = { usuario: "admin", clave: "clave-de-prueba", secreto: "firma-de-prueba" };
 
 async function levantar(dataDir) {
-  const { app, eventos } = crearApp({ token: TOKEN, dataDir });
+  const { app, eventos } = crearApp({ token: TOKEN, dataDir, admin: ADMIN });
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -22,7 +23,12 @@ async function levantar(dataDir) {
     server.close();
     server.closeAllConnections(); // los streams SSE quedan abiertos si no
   };
-  return { base, post, eventos, cerrar };
+  // Inicia sesión y devuelve la cookie con el JWT
+  const login = async (username = ADMIN.usuario, password = ADMIN.clave) => {
+    const res = await post("/login", { username, password }, null);
+    return { status: res.status, cookie: (res.headers.get("set-cookie") || "").split(";")[0] };
+  };
+  return { base, post, login, eventos, cerrar };
 }
 
 test("receptor de webhooks", async (t) => {
@@ -69,7 +75,9 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
   t.after(r.cerrar);
 
-  const res = await fetch(r.base + "/stream");
+  assert.equal((await fetch(r.base + "/stream")).status, 401);
+  const { cookie } = await r.login();
+  const res = await fetch(r.base + "/stream", { headers: { cookie } });
   assert.match(res.headers.get("content-type"), /^text\/event-stream/);
   const lector = res.body.pipeThrough(new TextDecoderStream()).getReader();
   const siguiente = async () => JSON.parse((await lector.read()).value.replace(/^data: /, ""));
@@ -88,6 +96,31 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   await lector.cancel();
 });
 
+test("login del admin", async (t) => {
+  const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
+  t.after(r.cerrar);
+  const me = (cookie) => fetch(r.base + "/me", { headers: cookie ? { cookie } : {} });
+
+  assert.equal((await r.post("/login", { username: "admin" }, null)).status, 400);
+  assert.equal((await r.login("admin", "otra")).status, 401);
+  assert.equal((await r.login("otro", ADMIN.clave)).status, 401);
+  assert.equal((await me()).status, 401);
+  assert.equal((await me("token=inventado")).status, 401);
+
+  const { status, cookie } = await r.login();
+  assert.equal(status, 200);
+  assert.deepEqual(await (await me(cookie)).json(), { username: "admin" });
+
+  // Un JWT firmado con otra clave no sirve
+  const jwt = require("jsonwebtoken");
+  assert.equal((await me(`token=${jwt.sign({ username: "admin" }, "otra-firma")}`)).status, 401);
+
+  // logout borra la cookie
+  const salida = await fetch(r.base + "/logout", { method: "POST", headers: { cookie } });
+  assert.match(salida.headers.get("set-cookie"), /token=;/);
+});
+
 test("no arranca sin token", () => {
-  assert.throws(() => crearApp({ token: "", dataDir: os.tmpdir() }), /WEBHOOK_TOKEN/);
+  assert.throws(() => crearApp({ token: "", dataDir: os.tmpdir(), admin: ADMIN }), /WEBHOOK_TOKEN/);
+  assert.throws(() => crearApp({ token: TOKEN, dataDir: os.tmpdir(), admin: { ...ADMIN, clave: "" } }), /ADMIN_PASSWORD/);
 });

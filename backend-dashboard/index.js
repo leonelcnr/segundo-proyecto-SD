@@ -2,15 +2,18 @@ const path = require("node:path");
 const express = require("express");
 const { crearWebhooks } = require("./routes/webhooks");
 const { crearDashboard } = require("./routes/dashboard");
+const { crearAuth } = require("./routes/auth");
 
-function crearApp({ token, dataDir }) {
+function crearApp({ token, dataDir, admin }) {
+  const auth = crearAuth(admin);
   // Cada aviso nuevo que llega por webhook se reenvía a los navegadores conectados
   const webhooks = crearWebhooks({ token, dataDir, alGuardar: () => dashboard.avisarCambio() });
-  const dashboard = crearDashboard({ eventos: webhooks.eventos });
+  const dashboard = crearDashboard({ eventos: webhooks.eventos, verificarToken: auth.verificarToken });
 
   const app = express();
   app.use(express.json({ limit: "64kb" }));
   app.use("/webhook", webhooks.router);
+  app.use("/", auth.router);
   app.use("/", dashboard.router);
 
   app.use((err, req, res, next) => {
@@ -27,6 +30,7 @@ if (require.main === module) {
   const { app } = crearApp({
     token: process.env.WEBHOOK_TOKEN,
     dataDir: process.env.DATA_DIR || path.join(__dirname, "data"),
+    admin: { usuario: process.env.ADMIN_USER, clave: process.env.ADMIN_PASSWORD, secreto: process.env.JWT_SECRET },
   });
   const puerto = Number(process.env.PORT) || 3000;
   app.listen(puerto, () => console.log(`Receptor escuchando en :${puerto}`));
