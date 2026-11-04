@@ -61,4 +61,4 @@ function crearAuth({ usuario, clave, secreto }) {
   return { router, verificarToken };
 }
 
-module.exports = { crearAuth };
+module.exports = { crearAuth, iguales };

@@ -8,8 +8,11 @@ const { crearApp } = require("./index");
 const TOKEN = "secreto-de-prueba";
 const ADMIN = { usuario: "admin", clave: "clave-de-prueba", secreto: "firma-de-prueba" };
 
-async function levantar(dataDir) {
-  const { app, eventos } = crearApp({ token: TOKEN, dataDir, admin: ADMIN });
+// publicar: reemplaza al cliente MQTT. Por defecto anota lo publicado en `publicados`.
+async function levantar(dataDir, publicar) {
+  const publicados = [];
+  publicar ??= async (topic, mensaje) => publicados.push({ topic, mensaje });
+  const { app, eventos } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -28,7 +31,7 @@ async function levantar(dataDir) {
     const res = await post("/login", { username, password }, null);
     return { status: res.status, cookie: (res.headers.get("set-cookie") || "").split(";")[0] };
   };
-  return { base, post, login, eventos, cerrar };
+  return { base, post, login, eventos, publicados, cerrar };
 }
 
 test("receptor de webhooks", async (t) => {
@@ -48,6 +51,9 @@ test("receptor de webhooks", async (t) => {
   await t.test("payload inválido responde 400", async () => {
     assert.equal((await r.post("/webhook/eventos", "{no es json")).status, 400);
     assert.equal((await r.post("/webhook/reglas/pendientes", { estado: "ACCESO_PENDIENTE" })).status, 400);
+    // Sin clientid (o no es texto) el dashboard no puede ubicar el dispositivo
+    assert.equal((await r.post("/webhook/eventos", { event: "client.connected" })).status, 400);
+    assert.equal((await r.post("/webhook/eventos", { event: "client.connected", clientid: 5 })).status, 400);
   });
 
   await t.test("guarda cada aviso una sola vez", async () => {
@@ -69,6 +75,22 @@ test("receptor de webhooks", async (t) => {
     assert.equal(r2.eventos.length, 4);
     assert.equal((await (await r2.post("/webhook/eventos", conexion)).json()).duplicado, true);
   });
+});
+
+test("arranca aunque la última línea del log haya quedado cortada", async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), "receptor-"));
+  const sano = { tipo: "alerta", recibido: new Date().toISOString(), datos: { clientid: "a" } };
+  fs.writeFileSync(path.join(dir, "eventos.jsonl"), JSON.stringify(sano) + '\n{"tipo":"aler');
+  const r = await levantar(dir);
+  t.after(r.cerrar);
+  assert.equal(r.eventos.length, 1);
+
+  // El aviso siguiente queda en su propia línea y se puede volver a leer
+  await r.post("/webhook/reglas/alertas", { clientid: "b" });
+  r.cerrar();
+  const r2 = await levantar(dir);
+  t.after(r2.cerrar);
+  assert.deepEqual(r2.eventos.map((e) => e.datos.clientid), ["a", "b"]);
 });
 
 test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", async (t) => {
@@ -118,6 +140,54 @@ test("login del admin", async (t) => {
   // logout borra la cookie
   const salida = await fetch(r.base + "/logout", { method: "POST", headers: { cookie } });
   assert.match(salida.headers.get("set-cookie"), /token=;/);
+});
+
+test("decisión del admin", async (t) => {
+  const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), "receptor-"));
+  const r = await levantar(dir());
+  t.after(r.cerrar);
+  const { cookie } = await r.login();
+  const decidir = (body, c = cookie) =>
+    fetch(r.base + "/api/decision", {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(c && { cookie: c }) },
+      body: JSON.stringify(body),
+    });
+
+  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", ts: Date.now() });
+  await r.post("/webhook/reglas/pendientes", { req_id: "viejo", estado: "ACCESO_PENDIENTE", ts: Date.now() - 60_000 });
+
+  assert.equal((await decidir({ req_id: "r1", decision: "ACEPTAR" }, null)).status, 401);
+  assert.equal((await decidir({ req_id: "r1", decision: "TAL VEZ" })).status, 400);
+  assert.equal((await decidir({ req_id: "no-existe", decision: "ACEPTAR" })).status, 404);
+  assert.equal((await decidir({ req_id: "viejo", decision: "ACEPTAR" })).status, 409); // vencida
+
+  assert.equal((await decidir({ req_id: "r1", decision: "ACEPTAR" })).status, 200);
+  assert.deepEqual(r.publicados, [
+    { topic: "admin/decision", mensaje: { req_id: "r1", decision: "ACEPTAR", admin: "admin" } },
+  ]);
+  // Doble clic o segunda pestaña: no se manda otra decisión
+  assert.equal((await decidir({ req_id: "r1", decision: "RECHAZAR" })).status, 409);
+  assert.equal(r.publicados.length, 1);
+
+  await t.test("si el broker falla responde 503 y se puede reintentar", async () => {
+    let falla = true;
+    const r2 = await levantar(dir(), async () => {
+      if (falla) throw new Error("sin conexión");
+    });
+    t.after(r2.cerrar);
+    const c2 = (await r2.login()).cookie;
+    await r2.post("/webhook/reglas/pendientes", { req_id: "r2", estado: "ACCESO_PENDIENTE", ts: Date.now() });
+    const intentar = () =>
+      fetch(r2.base + "/api/decision", {
+        method: "POST",
+        headers: { "content-type": "application/json", cookie: c2 },
+        body: JSON.stringify({ req_id: "r2", decision: "RECHAZAR" }),
+      });
+    assert.equal((await intentar()).status, 503);
+    falla = false;
+    assert.equal((await intentar()).status, 200);
+  });
 });
 
 test("no arranca sin token", () => {

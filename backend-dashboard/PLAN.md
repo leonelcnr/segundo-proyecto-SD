@@ -104,7 +104,7 @@ Seguimos los topics que ya usa `servicio-acceso`: `puertas/{puerta}/...`, con `{
 | `puertas/{puerta}/solicitud` | ESP32 (solo su puerta) | servicio: `puertas/+/solicitud` | 1 | no | hoy `{uid, puerta}`; *nuevo*: `req_id` único, el servicio deduplica |
 | `puertas/{puerta}/respuesta` | servicio | ESP32 (solo su puerta) | 1 | no | `estado`: `ACCESO_CONCEDIDO` / `ACCESO_DENEGADO`; *nuevo*: `ACCESO_PENDIENTE` y `ACCESO_EXPIRADO` |
 | `puertas/{puerta}/presencia` *nuevo* | ESP32 (LWT) | servicio | 1 | **sí** | `online` al conectar, `offline` como Last Will |
-| `admin/decision` *nuevo* | **dashboard** | servicio | 1 | no | `{req_id, decision, admin}`; idempotente por `req_id` |
+| `admin/decision` *nuevo* | **dashboard** | servicio | 1 | no | `{req_id, decision, admin}`, con `decision` = `ACEPTAR` o `RECHAZAR`; idempotente por `req_id` |
 | `servicio/presencia` *nuevo* | servicio (LWT) | ESP32, dashboard | 1 | **sí** | si el servicio se cae, las puertas pasan a "fuera de servicio" |
 
 **Payload de `respuesta` cuando queda pendiente** (lo que dispara la regla). Mantiene los campos actuales (`uid`, `estado`, `detalle`) y suma los nuevos:
@@ -138,6 +138,7 @@ Seguimos los topics que ya usa `servicio-acceso`: `puertas/{puerta}/...`, con `{
     payload.puerta    as puerta,
     payload.estado    as estado,
     payload.expira_en as expira_en,
+    payload.via_admin as via_admin,   -- sin esto el dashboard no se entera de que se resolvió
     timestamp         as ts
   FROM "puertas/+/respuesta"
   WHERE payload.estado = 'ACCESO_PENDIENTE'
