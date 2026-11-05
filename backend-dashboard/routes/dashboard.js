@@ -1,24 +1,26 @@
 // Rutas que usa la página del admin
 const express = require("express");
 const { calcularEstado } = require("../estado");
+const { vista } = require("../broker/topics");
 
-const DECISIONES = ["ACEPTAR", "RECHAZAR"];
 
 // publicar(mensaje) manda un pedido del admin al servicio y devuelve una promesa.
-// presencia: Map con la última presencia de cada puerta y del servicio (llega por MQTT).
-function crearDashboard({ eventos, presencia, verificarToken, publicar }) {
+// memoria: lo último que llegó por MQTT (broker/topics.js).
+function crearDashboard({ eventos, memoria, verificarToken, publicar }) {
+
+  const estado = () => ({ ...calcularEstado(eventos), ...vista(memoria) });
+
   // Navegadores conectados a /stream
   const clientes = new Set();
-  // shortcut: manda el estado entero en cada aviso; mandar solo el cambio si el log crece mucho.
+  // shortcut: manda el estado entero en cada aviso; mandar solo el cambio si crece mucho.
   const enviarEstado = (destinos) => {
-    const estado = { ...calcularEstado(eventos), presencia: [...presencia.values()] };
-    const mensaje = `data: ${JSON.stringify(estado)}\n\n`;
+    const mensaje = `data: ${JSON.stringify(estado())}\n\n`;
     for (const res of destinos) res.write(mensaje);
   };
 
   const router = express.Router();
 
-  // Avisos en vivo (SSE): al conectarse recibe el estado completo, y otro cada vez que llega un aviso
+  // Avisos en vivo (SSE): al conectarse recibe el estado completo, y otro cada vez que llega algo
   router.get("/stream", verificarToken, (req, res) => {
     res.set({ "content-type": "text/event-stream", "cache-control": "no-cache" });
     res.flushHeaders();
@@ -27,35 +29,53 @@ function crearDashboard({ eventos, presencia, verificarToken, publicar }) {
     req.on("close", () => clientes.delete(res));
   });
 
-  // Solicitudes que el admin ya decidió desde acá, aunque la respuesta del servicio todavía no llegó.
+  // Publica el pedido; si el broker falla responde 503
+  const enviar = async (res, mensaje, descripcion) => {
+    try {
+      await publicar(mensaje);
+    } catch (err) {
+      console.error(`No se pudo publicar ${descripcion}: ${err.message}`);
+      res.status(503).json({ error: "No se pudo enviar el pedido al broker" });
+      return false;
+    }
+    console.log(`[pedido] ${descripcion}`);
+    res.json({ ok: true });
+    return true;
+  };
+
+  // Solicitudes que el admin ya decidió desde acá, aunque el estado nuevo del servicio todavía no llegó.
   // Evita mandar dos decisiones distintas por un doble clic o dos pestañas abiertas.
-  // Se pierde al reiniciar, y está bien: el servicio ignora una segunda decisión del mismo req_id.
+  // Se pierde al reiniciar, y está bien: con dos decisiones gana la primera y el servicio avisa ya_resuelta.
   const decididas = new Set();
 
-  // El admin acepta o rechaza una solicitud pendiente. Decide el servicio: esto solo le manda la decisión.
+  // El admin aprueba o rechaza una solicitud pendiente. Decide el servicio: esto solo le manda la decisión.
   router.post("/api/decision", verificarToken, async (req, res) => {
-    const { req_id, decision } = req.body || {};
-    if (typeof req_id !== "string" || !DECISIONES.includes(decision)) {
-      return res.status(400).json({ error: "Faltan req_id o decision (ACEPTAR o RECHAZAR)" });
+
+    const { req_id, aprobar } = req.body || {};
+    if (typeof req_id !== "string" || typeof aprobar !== "boolean") {
+      return res.status(400).json({ error: "Faltan req_id o aprobar (true o false)" });
     }
-    const solicitud = calcularEstado(eventos).pendientes.find((s) => s.req_id === req_id);
-    if (!solicitud) return res.status(404).json({ error: "No existe esa solicitud" });
+    const solicitud = vista(memoria).pendientes.find((s) => s.req_id === req_id);
+    if (!solicitud) return res.status(404).json({ error: "No existe esa solicitud o ya se resolvió" });
     if (decididas.has(req_id)) return res.status(409).json({ error: "La solicitud ya está decidida" });
-    if (solicitud.estado !== "pendiente") return res.status(409).json({ error: `La solicitud ya está ${solicitud.estado}` });
+    if (Date.parse(solicitud.vence) <= Date.now()) return res.status(409).json({ error: "La solicitud ya venció" });
 
     decididas.add(req_id);
-    try {
-      await publicar({ req_id, decision, admin: req.username });
-    } catch (err) {
-      decididas.delete(req_id); // no salió: que se pueda reintentar
-      console.error(`No se pudo publicar la decisión de ${req_id}: ${err.message}`);
-      return res.status(503).json({ error: "No se pudo enviar la decisión al broker" });
-    }
-    console.log(`[decision] ${req_id} ${decision} por ${req.username}`);
-    res.json({ ok: true });
+    const ok = await enviar(res, { tipo: "decision", req_id, aprobar }, `${req_id} ${aprobar ? "aprobada" : "rechazada"} por ${req.username}`);
+    if (!ok) decididas.delete(req_id); // no salió: que se pueda reintentar
+  });
+
+  // El admin reconoce la alarma de un sitio; el servicio la apaga
+  router.post("/api/alarma/reconocer", verificarToken, async (req, res) => {
+
+    const { sitio } = req.body || {};
+    if (typeof sitio !== "string") return res.status(400).json({ error: "Falta sitio" });
+    if (!memoria.alarmas[sitio]?.activa) return res.status(409).json({ error: "No hay alarma activa en ese sitio" });
+    await enviar(res, { tipo: "reconocer_alarma", sitio }, `alarma de ${sitio} reconocida por ${req.username}`);
   });
 
   return { router, avisarCambio: () => enviarEstado(clientes) };
 }
+
 
 module.exports = { crearDashboard };

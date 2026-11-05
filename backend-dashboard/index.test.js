@@ -4,6 +4,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { crearApp } = require("./index");
+const { aplicar } = require("./broker/topics");
 
 const TOKEN = "secreto-de-prueba";
 const ADMIN = { usuario: "admin", clave: "clave-de-prueba", secreto: "firma-de-prueba" };
@@ -13,7 +14,7 @@ async function levantar(dataDir, publicar) {
 
   const publicados = [];
   publicar ??= async (mensaje) => publicados.push(mensaje);
-  const { app, eventos, presencia, avisarCambio } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
+  const { app, eventos, memoria, avisarCambio } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -21,7 +22,7 @@ async function levantar(dataDir, publicar) {
   const post = (ruta, body, token = TOKEN) =>
     fetch(base + ruta, {
       method: "POST",
-      headers: { "content-type": "application/json", ...(token && { authorization: `Bearer ${token}` }) },
+      headers: { "content-type": "application/json", ...(token && { "x-token": token }) },
       body: typeof body === "string" ? body : JSON.stringify(body),
     });
 
@@ -37,7 +38,10 @@ async function levantar(dataDir, publicar) {
   };
 
 
-  return { base, post, login, eventos, presencia, avisarCambio, publicados, cerrar };
+    // Simula un mensaje MQTT que llega al dashboard
+  const mqtt = (topic, datos) => aplicar(memoria, topic, typeof datos === "string" ? datos : JSON.stringify(datos)) && avisarCambio();
+
+  return { base, post, login, eventos, mqtt, publicados, cerrar };
 }
 
 
@@ -47,41 +51,38 @@ test("receptor de webhooks", async (t) => {
   const r = await levantar(dir);
   t.after(r.cerrar);
 
-  const conexion = { event: "client.connected", clientid: "puerta_hall", timestamp: 1 };
-  const pendiente = { req_id: "puerta_hall-1-1", estado: "ACCESO_PENDIENTE", uid: "A1B2C3D4" };
+  const conexion = { event: "client.connected", clientid: "puerta-hall", timestamp: 1 };
+  const alarma = { puerta: "puerta-servidores", persona: "Beto", detalle: "tarjeta desconocida", timestamp: 2 };
 
-  await t.test("sin token o con token incorrecto responde 401", async () => {
-    assert.equal((await r.post("/webhook/eventos", conexion, null)).status, 401);
-    assert.equal((await r.post("/webhook/eventos", conexion, "otro")).status, 401);
+  await t.test("sin X-Token o con uno incorrecto responde 401", async () => {
+    assert.equal((await r.post("/webhook/conexiones", conexion, null)).status, 401);
+    assert.equal((await r.post("/webhook/conexiones", conexion, "otro")).status, 401);
     assert.equal(r.eventos.length, 0);
   });
 
   await t.test("payload inválido responde 400", async () => {
-    assert.equal((await r.post("/webhook/eventos", "{no es json")).status, 400);
-    assert.equal((await r.post("/webhook/reglas/pendientes", { estado: "ACCESO_PENDIENTE" })).status, 400);
+    assert.equal((await r.post("/webhook/conexiones", "{no es json")).status, 400);
     // Sin clientid (o no es texto) el dashboard no puede ubicar el dispositivo
-    assert.equal((await r.post("/webhook/eventos", { event: "client.connected" })).status, 400);
-    assert.equal((await r.post("/webhook/eventos", { event: "client.connected", clientid: 5 })).status, 400);
+    assert.equal((await r.post("/webhook/conexiones", { event: "client.connected" })).status, 400);
+    assert.equal((await r.post("/webhook/conexiones", { event: "client.connected", clientid: 5 })).status, 400);
+    assert.equal((await r.post("/webhook/alarmas", { persona: "Beto" })).status, 400);
   });
 
   await t.test("guarda cada aviso una sola vez", async () => {
-    assert.equal((await r.post("/webhook/eventos", conexion)).status, 200);
-    assert.equal((await r.post("/webhook/reglas/pendientes", pendiente)).status, 200);
-    // Reintento del broker y re-publicación QoS 1 con otro timestamp: no se duplican
-    assert.deepEqual(await (await r.post("/webhook/eventos", conexion)).json(), { ok: true, duplicado: true });
-    assert.equal((await r.post("/webhook/reglas/pendientes", { ...pendiente, ts: 99 })).status, 200);
-    // La resolución de la misma solicitud sí se guarda
-    await r.post("/webhook/reglas/pendientes", { ...pendiente, estado: "ACCESO_CONCEDIDO", via_admin: true });
-    await r.post("/webhook/reglas/alertas", { clientid: "intruso", result: "deny" });
-    assert.deepEqual(r.eventos.map((e) => e.tipo), ["evento", "pendiente", "pendiente", "alerta"]);
+    assert.equal((await r.post("/webhook/conexiones", conexion)).status, 200);
+    assert.equal((await r.post("/webhook/alarmas", alarma)).status, 200);
+    // Reintento del broker: no se duplica
+    assert.deepEqual(await (await r.post("/webhook/conexiones", conexion)).json(), { ok: true, duplicado: true });
+    await r.post("/webhook/seguridad", { clientid: "intruso", result: "deny" });
+    assert.deepEqual(r.eventos.map((e) => e.tipo), ["conexion", "alarma", "alerta"]);
   });
 
   await t.test("al reiniciar recarga el log y sigue deduplicando", async () => {
     r.cerrar();
     const r2 = await levantar(dir);
     t.after(r2.cerrar);
-    assert.equal(r2.eventos.length, 4);
-    assert.equal((await (await r2.post("/webhook/eventos", conexion)).json()).duplicado, true);
+    assert.equal(r2.eventos.length, 3);
+    assert.equal((await (await r2.post("/webhook/conexiones", conexion)).json()).duplicado, true);
   });
 });
 
@@ -96,7 +97,7 @@ test("arranca aunque la última línea del log haya quedado cortada", async (t) 
   assert.equal(r.eventos.length, 1);
 
   // El aviso siguiente queda en su propia línea y se puede volver a leer
-  await r.post("/webhook/reglas/alertas", { clientid: "b" });
+  await r.post("/webhook/seguridad", { clientid: "b" });
   r.cerrar();
   const r2 = await levantar(dir);
   t.after(r2.cerrar);
@@ -104,7 +105,7 @@ test("arranca aunque la última línea del log haya quedado cortada", async (t) 
 
 });
 
-test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", async (t) => {
+test("stream: manda el estado al conectarse y otra vez con cada novedad", async (t) => {
 
   const r = await levantar(fs.mkdtempSync(path.join(os.tmpdir(), "receptor-")));
   t.after(r.cerrar);
@@ -116,22 +117,23 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   const lector = res.body.pipeThrough(new TextDecoderStream()).getReader();
   const siguiente = async () => JSON.parse((await lector.read()).value.replace(/^data: /, ""));
 
-  assert.deepEqual(await siguiente(), { pendientes: [], dispositivos: [], alertas: [], presencia: [] });
+  assert.deepEqual(await siguiente(), {
+    dispositivos: [], alertas: [], alarmasWebhook: [],
+    pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [],
+  });
 
-  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
-  const estado = await siguiente();
-  assert.equal(estado.pendientes[0].nombre, "Carlos");
-  assert.equal(estado.pendientes[0].estado, "pendiente");
-
-  // Un duplicado no se vuelve a mandar
-  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
-  await r.post("/webhook/reglas/alertas", { clientid: "intruso" });
+  // Webhook
+  await r.post("/webhook/seguridad", { clientid: "intruso" });
   assert.equal((await siguiente()).alertas[0].clientid, "intruso");
+  // Un duplicado no se vuelve a mandar; lo que sigue es lo que llega por MQTT
+  await r.post("/webhook/seguridad", { clientid: "intruso" });
+  r.mqtt("servicio/presencia", "online");
+  assert.equal((await siguiente()).presencia[0].online, true);
 
-  // La presencia llega por MQTT: el cliente actualiza el Map y avisa
-  r.presencia.set("servicio/presencia", { nombre: "servicio", online: true });
-  r.avisarCambio();
-  assert.deepEqual((await siguiente()).presencia, [{ nombre: "servicio", online: true }]);
+  // Mensaje que no es del protocolo: no se manda nada
+  r.mqtt("acceso/edificio1/estado", "no es json");
+  r.mqtt("acceso/edificio1/alarma", { activa: true, puerta: "puerta-hall" });
+  assert.equal((await siguiente()).alarmas[0].activa, true);
   await lector.cancel();
 
 });
@@ -161,31 +163,45 @@ test("login del admin", async (t) => {
   assert.match(salida.headers.get("set-cookie"), /token=;/);
 });
 
-test("decisión del admin", async (t) => {
+test("decisión del admin y alarma", async (t) => {
+
   const dir = () => fs.mkdtempSync(path.join(os.tmpdir(), "receptor-"));
   const r = await levantar(dir());
   t.after(r.cerrar);
   const { cookie } = await r.login();
-  const decidir = (body, c = cookie) =>
-    fetch(r.base + "/api/decision", {
+  const pedir = (ruta, body, c = cookie) =>
+    fetch(r.base + ruta, {
       method: "POST",
       headers: { "content-type": "application/json", ...(c && { cookie: c }) },
       body: JSON.stringify(body),
     });
+  const decidir = (body, c) => pedir("/api/decision", body, c);
+  // Hora local sin zona, como la manda el servicio
+  const local = (ms) => new Date(ms - new Date(ms).getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 
-  await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", ts: Date.now() });
-  await r.post("/webhook/reglas/pendientes", { req_id: "viejo", estado: "ACCESO_PENDIENTE", ts: Date.now() - 60_000 });
+  r.mqtt("acceso/edificio1/estado", {
+    pendientes: [
+      { req_id: "r1", puerta: "puerta-servidores", persona: "Beto", vence: local(Date.now() + 20_000) },
+      { req_id: "viejo", puerta: "puerta-servidores", persona: "Ana", vence: local(Date.now() - 5_000) },
+    ],
+  });
 
-  assert.equal((await decidir({ req_id: "r1", decision: "ACEPTAR" }, null)).status, 401);
-  assert.equal((await decidir({ req_id: "r1", decision: "TAL VEZ" })).status, 400);
-  assert.equal((await decidir({ req_id: "no-existe", decision: "ACEPTAR" })).status, 404);
-  assert.equal((await decidir({ req_id: "viejo", decision: "ACEPTAR" })).status, 409); // vencida
+  assert.equal((await decidir({ req_id: "r1", aprobar: true }, null)).status, 401);
+  assert.equal((await decidir({ req_id: "r1", aprobar: "si" })).status, 400);
+  assert.equal((await decidir({ req_id: "no-existe", aprobar: true })).status, 404);
+  assert.equal((await decidir({ req_id: "viejo", aprobar: true })).status, 409); // vencida
 
-  assert.equal((await decidir({ req_id: "r1", decision: "ACEPTAR" })).status, 200);
-  assert.deepEqual(r.publicados, [{ req_id: "r1", decision: "ACEPTAR", admin: "admin" }]);
+  assert.equal((await decidir({ req_id: "r1", aprobar: true })).status, 200);
+  assert.deepEqual(r.publicados, [{ tipo: "decision", req_id: "r1", aprobar: true }]);
   // Doble clic o segunda pestaña: no se manda otra decisión
-  assert.equal((await decidir({ req_id: "r1", decision: "RECHAZAR" })).status, 409);
+  assert.equal((await decidir({ req_id: "r1", aprobar: false })).status, 409);
   assert.equal(r.publicados.length, 1);
+
+  // Alarma: solo se reconoce si está activa
+  assert.equal((await pedir("/api/alarma/reconocer", { sitio: "edificio1" })).status, 409);
+  r.mqtt("acceso/edificio1/alarma", { activa: true, puerta: "puerta-hall", motivo: "tarjeta desconocida" });
+  assert.equal((await pedir("/api/alarma/reconocer", { sitio: "edificio1" })).status, 200);
+  assert.deepEqual(r.publicados[1], { tipo: "reconocer_alarma", sitio: "edificio1" });
 
   await t.test("si el broker falla responde 503 y se puede reintentar", async () => {
     let falla = true;
@@ -194,12 +210,12 @@ test("decisión del admin", async (t) => {
     });
     t.after(r2.cerrar);
     const c2 = (await r2.login()).cookie;
-    await r2.post("/webhook/reglas/pendientes", { req_id: "r2", estado: "ACCESO_PENDIENTE", ts: Date.now() });
+    r2.mqtt("acceso/edificio1/estado", { pendientes: [{ req_id: "r2", vence: local(Date.now() + 20_000) }] });
     const intentar = () =>
       fetch(r2.base + "/api/decision", {
         method: "POST",
         headers: { "content-type": "application/json", cookie: c2 },
-        body: JSON.stringify({ req_id: "r2", decision: "RECHAZAR" }),
+        body: JSON.stringify({ req_id: "r2", aprobar: false }),
       });
     assert.equal((await intentar()).status, 503);
     falla = false;

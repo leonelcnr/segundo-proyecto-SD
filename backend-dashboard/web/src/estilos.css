@@ -126,6 +126,11 @@ a { color: inherit; }
 .renglon { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 0; }
 .renglon + .renglon { border-top: 1px solid var(--borde); }
 
+/* Alarma del sitio */
+.alarma { padding: 20px 24px; background: var(--mal-fondo); border-color: #f6c3b3; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.alarma h2 { color: var(--mal-texto); }
+.alarma p { color: var(--mal-texto); }
+
 /* Fila de abajo */
 .bloque { padding: 18px 20px; }
 .bloque h2 { font-size: 17px; margin-bottom: 8px; }

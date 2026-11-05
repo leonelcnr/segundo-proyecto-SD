@@ -3,18 +3,24 @@ import { Marca } from "./Login.jsx";
 
 const hora = (fecha) => new Date(fecha).toLocaleTimeString("es-AR", { hour12: false });
 
-// "Carlos Pérez (Empleado)" → ["Carlos Pérez", "Empleado"]
-const separarNombre = (texto = "") => {
-  const m = texto.match(/^(.*?)\s*\((.*)\)$/);
-  return m ? [m[1], m[2]] : [texto, ""];
-};
+const iniciales = (nombre = "") => nombre.split(/[ -]/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
-const iniciales = (nombre) => nombre.split(" ").map((p) => p[0]).join("").slice(0, 2).toUpperCase();
+const VACIO = { pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [], dispositivos: [], alertas: [], alarmasWebhook: [] };
 
-const rechazada = (s) => s.resultado?.includes("DENEGADO");
+// POST a la API del dashboard. Devuelve "" si salió bien, o el texto del error.
+async function pedir(ruta, body, alPerderSesion) {
+
+  try {
+    const r = await fetch(ruta, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
+    if (r.status === 401) return alPerderSesion(), "";
+    return r.ok ? "" : (await r.json()).error;
+  } catch {
+    return "No se pudo conectar con el servidor";
+  }
+}
 
 export default function Panel({ usuario, alSalir, alPerderSesion }) {
-  const [estado, setEstado] = useState({ pendientes: [], dispositivos: [], alertas: [], presencia: [] });
+  const [estado, setEstado] = useState(VACIO);
   const [conectado, setConectado] = useState(false);
   const [ahora, setAhora] = useState(Date.now());
 
@@ -37,14 +43,14 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
     return () => clearInterval(id);
   }, []);
 
-  // Una pendiente cuyo tiempo pasó ya no se puede decidir, aunque el servidor no haya mandado otro aviso
-  const vigente = (s) => s.estado === "pendiente" && Date.parse(s.vence) > ahora;
-  const pendientes = estado.pendientes.filter(vigente);
-  const resueltas = estado.pendientes.filter((s) => !vigente(s)).slice(0, 5);
+  // Una pendiente cuyo tiempo pasó ya no se puede decidir, aunque el servicio todavía no haya mandado el estado nuevo
+  const pendientes = estado.pendientes.filter((s) => Date.parse(s.vence) > ahora);
+  const resueltas = estado.eventos.filter((e) => e.tipo === "acceso" || e.tipo === "denegado").slice(0, 5);
+  const alarmas = estado.alarmas.filter((a) => a.activa);
   // La presencia por MQTT (Last Will) manda; si todavía no llegó, se usa el webhook de conexión
   const servicio =
     estado.presencia.find((p) => p.nombre === "servicio") ??
-    estado.dispositivos.find((d) => d.clientid === "servicio_acceso");
+    estado.dispositivos.find((d) => d.clientid === "servicio");
 
   return (
     <div className="app">
@@ -78,6 +84,8 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
           )}
         </header>
 
+        {alarmas.map((a) => <Alarma key={a.sitio} alarma={a} alPerderSesion={alPerderSesion} />)}
+
         <div className="fila-principal">
           <section id="pendientes" className="columna">
             <h2>
@@ -95,28 +103,22 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
             <h2>Estado del sistema</h2>
             <div className="card estado">
               <Alertas alertas={estado.alertas} />
-              <Dispositivos dispositivos={estado.dispositivos} presencia={estado.presencia} />
+              <Dispositivos estado={estado} />
             </div>
           </aside>
         </div>
 
         <div className="fila-inferior">
           <section className="card bloque">
-            <h2>Resueltas recién</h2>
-            {resueltas.length === 0 && <p className="tenue">Todavía ninguna.</p>}
-            {resueltas.map((s) => (
-              <div key={s.req_id} className="renglon">
+            <h2>Últimos accesos</h2>
+            {resueltas.length === 0 && <p className="tenue">Todavía ninguno.</p>}
+            {resueltas.map((e, i) => (
+              <div key={i} className="renglon">
                 <span>
-                  <b>{separarNombre(s.nombre ?? s.req_id)[0]}</b>{" "}
-                  <span className="tenue">· {s.puerta} · {hora(s.resuelta ?? s.vence)}</span>
+                  <b>{e.persona ?? e.uid}</b>{" "}
+                  <span className="tenue">· {e.puerta} · {e.detalle} · {hora(e.ts)}</span>
                 </span>
-                {s.estado === "vencida" || !s.resultado ? (
-                  <span className="pildora neutra">Venció</span>
-                ) : rechazada(s) ? (
-                  <span className="pildora mal">Rechazada</span>
-                ) : (
-                  <span className="pildora bien">Aceptada</span>
-                )}
+                <span className={`pildora ${e.tipo === "acceso" ? "bien" : "mal"}`}>{e.tipo === "acceso" ? "Entró" : "Denegado"}</span>
               </div>
             ))}
           </section>
@@ -128,30 +130,21 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
 }
 
 function Solicitud({ solicitud: s, ahora, alPerderSesion }) {
+
   const [enviada, setEnviada] = useState(false);
   const [enviando, setEnviando] = useState(false);
   const [error, setError] = useState("");
 
-  const [nombre, rol] = separarNombre(s.nombre ?? s.req_id);
+  const nombre = s.persona ?? s.req_id;
   const total = Date.parse(s.vence) - Date.parse(s.creada);
   const restante = Math.max(0, Date.parse(s.vence) - ahora);
   const segundos = Math.ceil(restante / 1000);
 
-  const decidir = async (decision) => {
+  const decidir = async (aprobar) => {
     setEnviando(true);
-    setError("");
-    try {
-      const r = await fetch("/api/decision", {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ req_id: s.req_id, decision }),
-      });
-      if (r.status === 401) return alPerderSesion();
-      if (r.ok) setEnviada(true);
-      else setError((await r.json()).error);
-    } catch {
-      setError("No se pudo conectar con el servidor");
-    }
+    const err = await pedir("/api/decision", { req_id: s.req_id, aprobar }, alPerderSesion);
+    setError(err);
+    setEnviada(!err);
     setEnviando(false);
   };
 
@@ -163,7 +156,7 @@ function Solicitud({ solicitud: s, ahora, alPerderSesion }) {
           <div>
             <div className="nombre">{nombre}</div>
             <div className="tenue">
-              {rol && `${rol} · `}quiere entrar a <b>{s.puerta}</b>
+              quiere entrar a <b>{s.puerta}</b>
             </div>
           </div>
         </div>
@@ -179,8 +172,8 @@ function Solicitud({ solicitud: s, ahora, alPerderSesion }) {
 
       <dl className="datos">
         <div><dt>Puerta</dt><dd>{s.puerta}</dd></div>
-        <div><dt>UID</dt><dd>{s.uid}</dd></div>
-        <div><dt>Pasó la tarjeta</dt><dd>{hora(s.creada)}</dd></div>
+        <div><dt>Sitio</dt><dd>{s.sitio}</dd></div>
+        <div><dt>Vence</dt><dd>{hora(s.vence)}</dd></div>
       </dl>
 
       {error && <p className="error" role="alert">{error}</p>}
@@ -189,14 +182,39 @@ function Solicitud({ solicitud: s, ahora, alPerderSesion }) {
           <span className="tenue">Decisión enviada. Esperando la respuesta del servicio…</span>
         ) : (
           <>
-            <button className="boton" disabled={enviando} onClick={() => decidir("RECHAZAR")}>Rechazar</button>
-            <button className="boton primario" disabled={enviando} onClick={() => decidir("ACEPTAR")}>Aceptar y abrir</button>
+            <button className="boton" disabled={enviando} onClick={() => decidir(false)}>Rechazar</button>
+            <button className="boton primario" disabled={enviando} onClick={() => decidir(true)}>Aceptar y abrir</button>
           </>
         )}
       </div>
     </article>
   );
 }
+
+// Alarma del sitio (retenida): suena en todas las puertas hasta que un admin la reconoce
+function Alarma({ alarma: a, alPerderSesion }) {
+
+  const [error, setError] = useState("");
+  const [enviando, setEnviando] = useState(false);
+
+  const reconocer = async () => {
+    setEnviando(true);
+    setError(await pedir("/api/alarma/reconocer", { sitio: a.sitio }, alPerderSesion));
+    setEnviando(false);
+  };
+
+  return (
+    <section className="card alarma" role="alert">
+      <div>
+        <h2>Alarma en {a.sitio}</h2>
+        <p>{a.motivo ?? "Sin motivo"}{a.puerta && ` · ${a.puerta}`}{a.desde && ` · desde ${hora(a.desde)}`}</p>
+        {error && <p className="error">{error}</p>}
+      </div>
+      <button className="boton primario" disabled={enviando} onClick={reconocer}>Reconocer alarma</button>
+    </section>
+  );
+}
+
 
 function Alertas({ alertas }) {
   const ultima = alertas[0];
@@ -215,20 +233,46 @@ function Alertas({ alertas }) {
         {ultima.clientid} intentó {ultima.action === "publish" ? "publicar" : "suscribirse"} en <b>{ultima.topic}</b>
       </div>
       <div className="tenue chico">
-        Bloqueado por la ACL · {ultima.peerhost} · {hora(ultima.ts ?? ultima.recibido)}
+        Bloqueado por la ACL · {ultima.peerhost} · {hora(ultima.timestamp ?? ultima.recibido)}
       </div>
     </section>
   );
 }
 
-function Dispositivos({ dispositivos, presencia }) {
-  const enLinea = dispositivos.filter((d) => d.online).length;
+function Dispositivos({ estado }) {
+
+  const puertas = estado.presencia.filter((p) => p.nombre !== "servicio");
+  const enLinea = puertas.filter((p) => p.online).length;
+  const telemetria = (p) => estado.telemetria.find((t) => t.puerta === p.nombre && t.sitio === p.sitio);
+
   return (
     <section id="dispositivos" className="tramo crece">
       <h3>
-        Dispositivos <span>{enLinea} de {dispositivos.length} en línea</span>
+        Puertas <span>{enLinea} de {puertas.length} en línea</span>
       </h3>
-      {dispositivos.map((d) => (
+      {puertas.length === 0 && <p className="tenue">Todavía no llegó la presencia de ninguna puerta.</p>}
+      {puertas.map((p) => {
+        const t = telemetria(p);
+        return (
+          <div key={`${p.sitio}/${p.nombre}`} className="renglon">
+            <div>
+              <div className="medio">{p.nombre}</div>
+              <div className="tenue chico">
+                {p.sitio} · desde {hora(p.desde)}
+                {t?.rssi != null && ` · señal ${t.rssi} dBm`}
+              </div>
+            </div>
+            {t?.lector_ok === false ? (
+              <span className="pildora mal">Falla del lector</span>
+            ) : (
+              <span className={`pildora ${p.online ? "bien" : "mal"}`}>{p.online ? "Online" : "Offline"}</span>
+            )}
+          </div>
+        );
+      })}
+
+      {estado.dispositivos.length > 0 && <h3 className="subtitulo">Conexiones (webhook)</h3>}
+      {estado.dispositivos.map((d) => (
         <div key={d.clientid} className="renglon">
           <div>
             <div className="medio">{d.clientid}</div>
@@ -237,34 +281,23 @@ function Dispositivos({ dispositivos, presencia }) {
           <span className={`pildora ${d.online ? "bien" : "mal"}`}>{d.online ? "Online" : "Offline"}</span>
         </div>
       ))}
-
-      {presencia.length > 0 && <h3 className="subtitulo">Presencia (MQTT)</h3>}
-      {presencia.map((p) => (
-        <div key={`${p.sitio}/${p.nombre}`} className="renglon">
-          <div>
-            <div className="medio">{p.nombre}</div>
-            <div className="tenue chico">{p.sitio ? `${p.sitio} · ` : ""}desde {hora(p.desde)}</div>
-          </div>
-          <span className={`pildora ${p.online ? "bien" : "mal"}`}>{p.online ? "Online" : "Offline"}</span>
-        </div>
-      ))}
     </section>
   );
 }
 
-// Resumen armado con el estado actual (no es el log crudo: ese está por confirmar)
+// Eventos del servicio + conexiones, alertas y avisos (no es el log crudo: ese está por confirmar)
 function Actividad({ estado }) {
+
   const items = [
-    ...estado.pendientes.map((s) => ({ t: s.creada, texto: `${s.nombre ?? s.req_id} pendiente en ${s.puerta}` })),
-    ...estado.pendientes
-      .filter((s) => s.resuelta)
-      .map((s) => ({ t: s.resuelta, texto: `${s.nombre ?? s.req_id}: ${rechazada(s) ? "rechazada" : "aceptada"}` })),
+    ...estado.eventos.map((e) => ({ t: e.ts, texto: `${e.tipo}: ${e.persona ?? e.puerta ?? ""} ${e.detalle ? `(${e.detalle})` : ""}` })),
     ...estado.dispositivos.map((d) => ({
       t: d.desde,
       texto: d.online ? `${d.clientid} se conectó` : `${d.clientid} se desconectó (${d.motivo ?? "sin motivo"})`,
     })),
-    ...estado.alertas.map((a) => ({ t: a.ts ?? a.recibido, texto: `Alerta: ${a.clientid} bloqueado en ${a.topic}` })),
+    ...estado.alertas.map((a) => ({ t: a.timestamp ?? a.recibido, texto: `Alerta: ${a.clientid} bloqueado en ${a.topic}` })),
+    ...estado.avisos.map((a) => ({ t: a.recibido, texto: a.tipo === "ya_resuelta" ? `${a.req_id} ya la había resuelto ${a.por}` : a.tipo })),
   ]
+    .filter((it) => it.t)
     .sort((a, b) => new Date(b.t) - new Date(a.t))
     .slice(0, 8);
 

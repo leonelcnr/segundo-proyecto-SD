@@ -274,7 +274,7 @@ Vistas de la página:
 - [x] App React con el panel (boceto 4.1b) y SSE, compilada en el Dockerfile. Faltan las otras vistas.
 - [x] Cliente MQTT (`broker/conexion.js`) con los topics en `broker/topics.js`: publica en `usuario/{admin}/pedido` y escucha la presencia. Probado contra un EMQX local:
   `docker run -d --name emqx-dev -p 127.0.0.1:1883:1883 -p 127.0.0.1:18083:18083 emqx/emqx:latest` y `MQTT_URL=mqtt://localhost:1883` en el `.env`.
-- [ ] Suscribirse a alarma, estado, eventos, telemetría y aviso cuando estén los formatos (sección 4 del documento de topics).
+- [x] Adaptado al protocolo del grupo ("Protocolo MQTT del sistema de puertas"): suscripción a estado, eventos, alarma, presencia, telemetría y aviso; pedidos con el formato 4.8 (decisión y reconocer alarma); webhooks en /webhook/conexiones, /seguridad y /alarmas con X-Token. Probado con `simulador.js` contra el EMQX local.
 - [ ] Probar con TLS (`mqtts://` + `MQTT_CA`) contra el broker real.
 - [ ] Prueba de punta a punta con el servicio real: tarjeta sin permiso → aparece en el dashboard → Aceptar → se abre la puerta.
 

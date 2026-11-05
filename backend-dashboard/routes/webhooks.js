@@ -4,11 +4,8 @@ const path = require("node:path");
 const express = require("express");
 const { iguales } = require("./auth");
 
-// EMQX reintenta si no le respondemos a tiempo, así que el mismo aviso puede llegar dos veces.
-// Una solicitud pendiente se identifica por req_id + estado (QoS 1 puede re-publicarla con otro timestamp);
-// el resto de los avisos, por su contenido exacto.
-const clave = (tipo, datos) =>
-  tipo === "pendiente" ? `${tipo}|${datos.req_id}|${datos.estado}` : `${tipo}|${JSON.stringify(datos)}`;
+// EMQX reintenta si no le respondemos a tiempo, así que el mismo aviso puede llegar dos veces: se reconoce por su contenido exacto.
+const clave = (tipo, datos) => `${tipo}|${JSON.stringify(datos)}`;
 
 // Si el proceso murió a mitad de escribir, la última línea queda cortada: se descarta para poder arrancar igual.
 function leerLog(archivo) {
@@ -39,7 +36,8 @@ function crearWebhooks({ token, dataDir, alGuardar }) {
   // shortcut: el log y las claves viven enteros en memoria y en un solo archivo; rotar si pasa de unos pocos MB.
   const vistos = new Set(eventos.map((e) => clave(e.tipo, e.datos)));
 
-  const autorizado = (req) => iguales(req.get("authorization") || "", `Bearer ${token}`);
+  // Header que configura el conector HTTP de EMQX (protocolo, sección 7)
+  const autorizado = (req) => iguales(req.get("x-token") || "", token);
 
   const recibir = (tipo, validar) => (req, res) => {
     if (!autorizado(req)) return res.status(401).json({ error: "token inválido" });
@@ -61,10 +59,13 @@ function crearWebhooks({ token, dataDir, alGuardar }) {
   };
 
   const router = express.Router();
-  // El dashboard agrupa los dispositivos por clientid: sin él, el aviso no sirve
-  router.post("/eventos", recibir("evento", (d) => typeof d.clientid === "string" && d.clientid !== ""));
-  router.post("/reglas/pendientes", recibir("pendiente", (d) => typeof d.req_id === "string" && d.req_id !== ""));
-  router.post("/reglas/alertas", recibir("alerta", () => true));
+  const texto = (v) => typeof v === "string" && v !== "";
+  // Webhook directo: conexiones y desconexiones. El dashboard agrupa por clientid: sin él, el aviso no sirve
+  router.post("/conexiones", recibir("conexion", (d) => texto(d.clientid)));
+  // Regla: la ACL negó algo
+  router.post("/seguridad", recibir("alerta", () => true));
+  // Regla: evento con tipo = 'alarma' en acceso/+/eventos
+  router.post("/alarmas", recibir("alarma", (d) => texto(d.puerta)));
   return { router, eventos };
 }
 

@@ -4,18 +4,18 @@ const { crearWebhooks } = require("./routes/webhooks");
 const { crearDashboard } = require("./routes/dashboard");
 const { crearAuth } = require("./routes/auth");
 const { conectar } = require("./broker/conexion");
-const { SUSCRIPCIONES, pedido, leerPresencia } = require("./broker/topics");
+const { SUSCRIPCIONES, pedido, aviso, crearMemoria, aplicar } = require("./broker/topics");
 
 
 function crearApp({ token, dataDir, admin, publicar }) {
 
   const auth = crearAuth(admin);
-  // Última presencia de cada puerta y del servicio. No se guarda en disco: es retenida, el broker la reenvía al reconectar.
-  const presencia = new Map();
+  // Lo último que llegó por MQTT (estado, alarma, presencia, telemetría, eventos, avisos)
+  const memoria = crearMemoria();
   // Cada aviso nuevo que llega por webhook se reenvía a los navegadores conectados.
   // dashboard se crea en la línea de abajo; alGuardar recién se llama cuando llega un aviso.
   const webhooks = crearWebhooks({ token, dataDir, alGuardar: () => dashboard.avisarCambio() });
-  const dashboard = crearDashboard({ eventos: webhooks.eventos, presencia, verificarToken: auth.verificarToken, publicar });
+  const dashboard = crearDashboard({ eventos: webhooks.eventos, memoria, verificarToken: auth.verificarToken, publicar });
 
   const app = express();
 
@@ -31,7 +31,7 @@ function crearApp({ token, dataDir, admin, publicar }) {
     next(err);
   });
 
-  return { app, eventos: webhooks.eventos, presencia, avisarCambio: dashboard.avisarCambio };
+  return { app, eventos: webhooks.eventos, memoria, avisarCambio: dashboard.avisarCambio };
 }
 
 
@@ -43,31 +43,26 @@ if (require.main === module) {
   const env = process.env;
   let mqtt = null;
 
-  const { app, presencia, avisarCambio } = crearApp({
+  const { app, memoria, avisarCambio } = crearApp({
     token: env.WEBHOOK_TOKEN,
     dataDir: path.join(__dirname, "data"),
     admin: { usuario: env.ADMIN_USER, clave: env.ADMIN_PASSWORD, secreto: env.JWT_SECRET },
-    // {admin} del topic es el usuario MQTT del dashboard: la ACL solo lo deja publicar en su propio topic
+    // {admin} del topic es el usuario MQTT del dashboard (admin-1): la ACL solo lo deja publicar en su propio topic
     publicar: async (mensaje) => {
       if (!mqtt) throw new Error("MQTT no está configurado (falta MQTT_URL)");
       await mqtt.publicar(pedido(env.MQTT_USER), mensaje);
     },
   });
 
-  // Sin MQTT_URL el dashboard igual anda con los webhooks; solo no puede decidir
+  // Sin MQTT_URL el dashboard solo muestra los webhooks: no ve solicitudes ni puede decidir
   if (env.MQTT_URL) {
     mqtt = conectar({
       url: env.MQTT_URL,
       usuario: env.MQTT_USER,
       clave: env.MQTT_PASSWORD,
       ca: env.MQTT_CA,
-      suscripciones: SUSCRIPCIONES,
-      alMensaje: (topic, texto) => {
-        const p = leerPresencia(topic, texto);
-        if (!p) return;
-        presencia.set(topic, { ...p, desde: new Date().toISOString() });
-        avisarCambio();
-      },
+      suscripciones: [...SUSCRIPCIONES, aviso(env.MQTT_USER)],
+      alMensaje: (topic, texto) => aplicar(memoria, topic, texto) && avisarCambio(),
     });
   }
 

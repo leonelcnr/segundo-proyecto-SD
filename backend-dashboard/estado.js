@@ -1,4 +1,4 @@
-const EXPIRA_POR_DEFECTO = 45;
+// Estado que sale de los webhooks guardados en el log. Lo que llega por MQTT lo arma broker/topics.js.
 
 // Hora del aviso según el broker (ms); si no vino, la de recepción.
 const hora = (e) => {
@@ -8,59 +8,34 @@ const hora = (e) => {
 const iso = (ms) => new Date(ms).toISOString();
 
 
-function estadoDe(solicitud, ahora) {
-  if (solicitud.resultado) return "resuelta";
-  if (solicitud.vence <= ahora) return "vencida";
-  return "pendiente";
-}
+function calcularEstado(eventos) {
 
-function calcularEstado(eventos, ahora = Date.now()) {
-  const solicitudes = new Map();
   const dispositivos = new Map();
   const alertas = [];
+  const alarmas = [];
 
   for (const e of eventos) {
     const d = e.datos;
     const t = hora(e);
 
-    if (e.tipo === "pendiente" && (d.estado === "ACCESO_PENDIENTE" || d.via_admin)) {
-      const s = solicitudes.get(d.req_id) ?? { req_id: d.req_id };
-      if (d.estado === "ACCESO_PENDIENTE") {
-        // La resolución puede haber llegado antes (reintento del broker): completamos los datos sin pisarla
-        Object.assign(s, { uid: d.uid, nombre: d.nombre, puerta: d.puerta, detalle: d.detalle });
-        s.creada = t;
-        s.vence = t + (Number(d.expira_en) || EXPIRA_POR_DEFECTO) * 1000;
-      } else {
-        s.creada ??= t;
-        s.resultado = d.estado;
-        s.resuelta = t;
-      }
-      solicitudes.set(d.req_id, s);
-    } else if (e.tipo === "evento" && (d.event === "client.connected" || d.event === "client.disconnected")) {
+    if (e.tipo === "conexion" && (d.event === "client.connected" || d.event === "client.disconnected")) {
       // Los reintentos de EMQX pueden llegar desordenados: vale el evento más nuevo según el broker
       const previo = dispositivos.get(d.clientid);
       if (previo && previo.ms > t) continue;
       dispositivos.set(d.clientid, { clientid: d.clientid, ms: t, online: d.event === "client.connected", motivo: d.reason });
     } else if (e.tipo === "alerta") {
       alertas.push({ ...d, recibido: e.recibido });
+    } else if (e.tipo === "alarma") {
+      alarmas.push({ ...d, recibido: e.recibido });
     }
   }
-
-  const pendientes = [...solicitudes.values()]
-    .sort((a, b) => b.creada - a.creada)
-    .map((s) => ({
-      ...s,
-      creada: iso(s.creada),
-      vence: s.vence && iso(s.vence),
-      resuelta: s.resuelta && iso(s.resuelta),
-      estado: estadoDe(s, ahora),
-    }));
 
   const listaDispositivos = [...dispositivos.values()]
     .sort((a, b) => a.clientid.localeCompare(b.clientid))
     .map((x) => ({ clientid: x.clientid, online: x.online, desde: iso(x.ms), motivo: x.motivo }));
 
-  return { pendientes, dispositivos: listaDispositivos, alertas: alertas.reverse() };
+  return { dispositivos: listaDispositivos, alertas: alertas.reverse(), alarmasWebhook: alarmas.reverse() };
 }
+
 
 module.exports = { calcularEstado };
