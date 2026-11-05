@@ -19,6 +19,8 @@ function crearApp({ token, dataDir, admin, publicar }) {
   app.use("/webhook", webhooks.router);
   app.use("/", auth.router);
   app.use("/", dashboard.router);
+  // La página del admin (React compilado con `npm run build` en web/)
+  app.use(express.static(path.join(__dirname, "web", "dist")));
 
   app.use((err, req, res, next) => {
     if (err.type === "entity.parse.failed") return res.status(400).json({ error: "JSON inválido" });

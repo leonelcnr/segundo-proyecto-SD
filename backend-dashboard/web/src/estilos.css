@@ -1,0 +1,148 @@
+/* Estilo "Visitors" del boceto 4.1b */
+:root {
+  --texto: #181925;
+  --tenue: #6f6f6f;
+  --borde: #e8e8e8;
+  --fondo-suave: #fafafa;
+  --gris: #f5f5f5;
+  --lavanda: #918df6;
+  --lavanda-suave: #ece9fe;
+  --bien-fondo: #def6e4;
+  --bien-texto: #14532d;
+  --mal-fondo: #ffe4dc;
+  --mal-texto: #8a2a0a;
+  --alerta-fondo: #fff4f0;
+  --sombra: rgba(0, 0, 0, 0.06) 0 1px 3px, rgba(0, 0, 0, 0.06) 0 8px 16px;
+  --anillo: rgba(0, 0, 0, 0.08) 0 1px 1px, rgba(0, 0, 0, 0.05) 0 0 0 1px;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: #ffffff;
+  color: var(--texto);
+  font-family: "DM Sans", system-ui, sans-serif;
+  font-size: 15px;
+  line-height: 1.5;
+  letter-spacing: -0.02em;
+}
+
+h1, h2, h3 { margin: 0; font-weight: 600; }
+h1 { font-size: 36px; line-height: 1.2; letter-spacing: -0.04em; }
+h2 { font-size: 20px; display: flex; align-items: center; gap: 8px; }
+p { margin: 0; }
+b { font-weight: 600; }
+a { color: inherit; }
+
+.tenue { color: var(--tenue); }
+.chico { font-size: 13px; }
+.medio { font-weight: 500; }
+.error { color: var(--mal-texto); background: var(--mal-fondo); padding: 8px 12px; border-radius: 12px; font-size: 14px; }
+
+.card { border: 1px solid var(--borde); border-radius: 24px; background: #ffffff; }
+
+/* Píldoras y botones */
+.pildora { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 9999px; font-size: 13px; font-weight: 500; white-space: nowrap; }
+.pildora.bien { background: var(--bien-fondo); color: var(--bien-texto); }
+.pildora.mal { background: var(--mal-fondo); color: var(--mal-texto); }
+.pildora.neutra { background: var(--gris); color: var(--tenue); }
+.encabezado .pildora { padding: 6px 12px; }
+.punto { width: 6px; height: 6px; border-radius: 9999px; background: #33c758; }
+.contador { padding: 0 8px; border-radius: 9999px; background: var(--lavanda); font-size: 13px; font-weight: 600; }
+
+.boton {
+  font: inherit; font-weight: 500; color: var(--texto); background: #ffffff;
+  border: none; border-radius: 9999px; padding: 10px 24px; min-height: 48px; cursor: pointer;
+  box-shadow: var(--anillo);
+}
+.boton.primario { background: var(--lavanda); font-weight: 600; box-shadow: none; }
+.boton.texto { box-shadow: none; background: transparent; color: #666666; padding: 8px 12px; min-height: 40px; }
+.boton:hover:not(:disabled) { filter: brightness(0.96); }
+.boton:disabled { opacity: 0.6; cursor: default; }
+.boton:focus-visible, .item:focus-visible, input:focus-visible { outline: 2px solid var(--lavanda); outline-offset: 2px; }
+
+/* Marca */
+.marca { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; }
+.marca-icono { width: 32px; height: 32px; border-radius: 9999px; background: var(--lavanda); display: flex; align-items: center; justify-content: center; }
+
+/* Login */
+.login { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--fondo-suave); }
+.login-card { width: 100%; max-width: 380px; padding: 32px; display: flex; flex-direction: column; gap: 16px; box-shadow: var(--sombra); }
+.login-card h1 { font-size: 28px; }
+.login-card label { display: flex; flex-direction: column; gap: 6px; font-weight: 500; font-size: 14px; }
+.login-card input { font: inherit; padding: 10px 14px; border: 1px solid var(--borde); border-radius: 12px; }
+
+/* Estructura: menú lateral + contenido */
+.app { display: flex; min-height: 100vh; }
+.lateral {
+  width: 248px; flex: none; padding: 24px 16px; background: var(--fondo-suave); border-right: 1px solid var(--borde);
+  display: flex; flex-direction: column; gap: 6px; position: sticky; top: 0; height: 100vh;
+}
+.lateral .marca { padding: 0 8px 24px; }
+.item { display: flex; gap: 8px; justify-content: space-between; align-items: center; padding: 10px 14px; border-radius: 9999px; text-decoration: none; color: var(--tenue); font-weight: 500; }
+.item.activo { background: var(--lavanda-suave); color: var(--texto); }
+.usuario { margin-top: auto; padding: 16px 8px 0; border-top: 1px solid var(--borde); display: flex; align-items: center; gap: 10px; }
+.usuario span { flex: 1; }
+
+.contenido { flex: 1; min-width: 0; padding: 28px 36px 44px; display: flex; flex-direction: column; gap: 24px; }
+.encabezado { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; }
+
+.fila-principal { display: grid; grid-template-columns: 2fr 1fr; gap: 24px; }
+.fila-inferior { display: grid; grid-template-columns: 1fr 2fr; gap: 24px; align-items: start; }
+.columna { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+
+/* Solicitud pendiente */
+.solicitud:last-child { flex: 1; }
+.solicitud { padding: 28px; box-shadow: var(--sombra); display: flex; flex-direction: column; gap: 20px; }
+.solicitud-cabeza { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 12px; }
+.persona { display: flex; align-items: center; gap: 14px; }
+.avatar { width: 52px; height: 52px; flex: none; border-radius: 9999px; background: var(--lavanda-suave); display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 17px; }
+.avatar.chico { width: 32px; height: 32px; font-size: 12px; background: #ffffff; border: 1px solid var(--borde); }
+.nombre { font-size: 24px; font-weight: 600; letter-spacing: -0.03em; }
+.reloj { text-align: right; }
+.segundos { font-size: 36px; font-weight: 600; letter-spacing: -0.04em; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.barra { height: 8px; border-radius: 9999px; background: var(--gris); overflow: hidden; }
+.barra div { height: 100%; border-radius: 9999px; background: var(--lavanda); transition: width 1s linear; }
+.datos { margin: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 12px; }
+.datos div { background: var(--fondo-suave); border-radius: 12px; padding: 10px 14px; }
+.datos dt { color: var(--tenue); font-size: 12px; }
+.datos dd { margin: 0; font-weight: 500; }
+.acciones { margin-top: auto; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; align-items: center; }
+.vacia { flex: 1; padding: 40px 28px; color: var(--tenue); display: flex; align-items: center; justify-content: center; text-align: center; background: var(--fondo-suave); }
+
+/* Panel "Estado del sistema": alerta arriba, dispositivos abajo, misma altura que la solicitud */
+.estado { flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.tramo { padding: 18px 20px; }
+.tramo + .tramo { border-top: 1px solid var(--borde); }
+.tramo h3 { font-size: 13px; color: var(--tenue); margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
+.tramo h3 span { font-weight: 500; }
+.tramo.alerta { background: var(--alerta-fondo); }
+.tramo.alerta h3 { color: var(--mal-texto); }
+.tramo.alerta + .tramo { border-top-color: var(--mal-fondo); }
+.crece { flex: 1; }
+
+.renglon { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 12px 0; }
+.renglon + .renglon { border-top: 1px solid var(--borde); }
+
+/* Fila de abajo */
+.bloque { padding: 18px 20px; }
+.bloque h2 { font-size: 17px; margin-bottom: 8px; }
+.bloque.gris { background: var(--fondo-suave); }
+.actividad { margin: 0; padding: 0; list-style: none; font-size: 14px; color: #666666; line-height: 2; }
+.actividad b { color: var(--texto); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+/* Pantallas angostas: el menú pasa arriba y todo va en una columna */
+@media (max-width: 1000px) {
+  .fila-principal, .fila-inferior { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .app { flex-direction: column; }
+  .lateral { width: auto; height: auto; position: static; flex-direction: row; flex-wrap: wrap; align-items: center; border-right: none; border-bottom: 1px solid var(--borde); padding: 12px 16px; }
+  .lateral .marca { padding: 0 8px 0 0; width: 100%; }
+  .usuario { margin: 0 0 0 auto; padding: 0; border: none; }
+  .contenido { padding: 20px 16px 32px; }
+  h1 { font-size: 28px; }
+  .solicitud { padding: 20px; }
+  .acciones .boton { flex: 1; }
+}
