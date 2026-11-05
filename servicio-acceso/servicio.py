@@ -3,28 +3,25 @@ import os
 import sqlite3
 import paho.mqtt.client as mqtt
 
-# 1. Lee la IP enviada por Docker; si no existe, usa "localhost"
+# 1. Configuración de conexión (Docker u otro entorno)
 BROKER = os.getenv("BROKER_HOST", "localhost")
 PUERTO = int(os.getenv("BROKER_PORT", 1883))
 
-# Mapeo: convierte el nombre de la puerta al nombre de la columna en datos.db
+# Mapeo: convierte el nombre de la puerta (del topic) a la columna de permisos en datos.db
 MAPEO_PUERTAS = {
-    "puerta_hall": "permiso_hall",
-    "puerta_servidores": "permiso_servidores",
+    "puerta-hall": "permiso_hall",
+    "puerta-servidores": "permiso_servidores",
 }
 
 def validar_acceso(uid, puerta):
-    # 1. Traducimos la puerta recibida a su columna correspondiente en la BD
     columna_permiso = MAPEO_PUERTAS.get(puerta)
 
     if not columna_permiso:
-        return False, "Puerta desconocida"
+        return False, "Puerta desc."
 
-    # 2. Nos conectamos a datos.db
     conexion = sqlite3.connect("datos.db")
     cursor = conexion.cursor()
 
-    # 3. Consultamos la tarjeta en la BD usando la columna correcta
     cursor.execute(
         f"SELECT nombre, {columna_permiso} FROM usuarios WHERE uid_nfc = ?",
         (uid,),
@@ -34,16 +31,15 @@ def validar_acceso(uid, puerta):
     if resultado:
         nombre, tiene_permiso = resultado
         if tiene_permiso == 1:
-            # Guardamos el evento de éxito en el historial
             cursor.execute(
                 "INSERT INTO historial (puerta, uid_nfc, resultado) VALUES (?, ?, ?)",
                 (puerta, uid, "PERMITIDO"),
             )
             conexion.commit()
             conexion.close()
-            return True, f"Bienvenido/a {nombre}"
+            # Mensaje corto para la pantalla de la puerta (máx. 16 caracteres)
+            return True, f"Hola {nombre}"[:16]
 
-    # Si no tiene permiso o no existe la tarjeta, guardamos el intento fallido
     cursor.execute(
         "INSERT INTO historial (puerta, uid_nfc, resultado) VALUES (?, ?, ?)",
         (puerta, uid, "DENEGADO"),
@@ -51,38 +47,60 @@ def validar_acceso(uid, puerta):
     conexion.commit()
     conexion.close()
 
-    return False, "Acceso no autorizado"
+    return False, "Denegado"
+
+def on_connect(client, userdata, flags, rc):
+    if rc == 0:
+        print(" Conectado al Broker MQTT exitosamente.")
+        # Notifica que el servicio está online (retenido)
+        client.publish("servicio/presencia", "online", qos=1, retain=True)
+        # Suscripción al tópico general de lecturas: acceso/{sitio}/puerta/{puerta}/lectura
+        client.subscribe("acceso/+/puerta/+/lectura", qos=1)
+    else:
+        print(f" Fallo al conectar. Código de retorno: {rc}")
 
 def on_message(client, userdata, msg):
     try:
-        datos = json.loads(msg.payload.decode())
+        # Extrae sitio y puerta del topic: acceso/{sitio}/puerta/{puerta}/lectura
+        partes_topic = msg.topic.split("/")
+        sitio = partes_topic[1]
+        puerta = partes_topic[3]
+
+        datos = json.loads(msg.payload.decode("utf-8"))
+        req_id = datos.get("req_id")
         uid = datos.get("uid")
-        puerta = datos.get("puerta")
+
+        if not req_id or not uid:
+            return
 
         autorizado, mensaje = validar_acceso(uid, puerta)
 
+        # JSON de respuesta según la sección 4.2 del protocolo MQTT
         respuesta = {
-            "uid": uid,
-            "estado": "ACCESO_CONCEDIDO" if autorizado else "ACCESO_DENEGADO",
-            "detalle": mensaje,
+            "req_id": req_id,
+            "accion": "abrir" if autorizado else "denegar",
+            "mensaje": mensaje,
         }
 
-        topico_respuesta = f"puertas/{puerta}/respuesta"
-        client.publish(topico_respuesta, json.dumps(respuesta), qos=1)
+        topico_orden = f"acceso/{sitio}/puerta/{puerta}/orden"
+        client.publish(topico_orden, json.dumps(respuesta), qos=1)
 
         print(
-            f" Solicitud procesada para UID '{uid}' en '{puerta}': {respuesta['estado']} ({mensaje})"
+            f" Solicitud {req_id} para UID '{uid}' en '{puerta}': {respuesta['accion'].upper()}"
         )
 
     except Exception as e:
-        print(f"Error procesando mensaje: {e}")
+        print(f" Error procesando lectura: {e}")
 
-cliente = mqtt.Client(client_id="servicio_central")
+# Client ID exigido por las ACLs del broker: "servicio"
+cliente = mqtt.Client(client_id="servicio", clean_session=False)
+
+# Configura Last Will &amp; Testament (LWT) para notificar si se cae el servicio
+cliente.will_set("servicio/presencia", payload="offline", qos=1, retain=True)
+
+cliente.on_connect = on_connect
 cliente.on_message = on_message
 
-cliente.connect(BROKER, PUERTO)
-cliente.subscribe("puertas/+/solicitud", qos=1)
-
-print("Servicio Central escuchando solicitudes en 'datos.db'...")
+print(" Iniciando Servicio Central...")
+cliente.connect(BROKER, PUERTO, keepalive=10)
 cliente.loop_forever()
-
