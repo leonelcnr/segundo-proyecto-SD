@@ -8,12 +8,12 @@ const { crearApp } = require("./index");
 const TOKEN = "secreto-de-prueba";
 const ADMIN = { usuario: "admin", clave: "clave-de-prueba", secreto: "firma-de-prueba" };
 
-// publicar: reemplaza al cliente MQTT. Por defecto anota lo publicado en `publicados`.
+// publicar: reemplaza al cliente MQTT. Por defecto anota los pedidos publicados en `publicados`.
 async function levantar(dataDir, publicar) {
 
   const publicados = [];
-  publicar ??= async (topic, mensaje) => publicados.push({ topic, mensaje });
-  const { app, eventos } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
+  publicar ??= async (mensaje) => publicados.push(mensaje);
+  const { app, eventos, presencia, avisarCambio } = crearApp({ token: TOKEN, dataDir, admin: ADMIN, publicar });
   const server = app.listen(0);
   await new Promise((r) => server.once("listening", r));
   const base = `http://127.0.0.1:${server.address().port}`;
@@ -37,7 +37,7 @@ async function levantar(dataDir, publicar) {
   };
 
 
-  return { base, post, login, eventos, publicados, cerrar };
+  return { base, post, login, eventos, presencia, avisarCambio, publicados, cerrar };
 }
 
 
@@ -116,7 +116,7 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   const lector = res.body.pipeThrough(new TextDecoderStream()).getReader();
   const siguiente = async () => JSON.parse((await lector.read()).value.replace(/^data: /, ""));
 
-  assert.deepEqual(await siguiente(), { pendientes: [], dispositivos: [], alertas: [] });
+  assert.deepEqual(await siguiente(), { pendientes: [], dispositivos: [], alertas: [], presencia: [] });
 
   await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
   const estado = await siguiente();
@@ -127,6 +127,11 @@ test("stream: manda el estado al conectarse y otra vez con cada aviso nuevo", as
   await r.post("/webhook/reglas/pendientes", { req_id: "r1", estado: "ACCESO_PENDIENTE", nombre: "Carlos" });
   await r.post("/webhook/reglas/alertas", { clientid: "intruso" });
   assert.equal((await siguiente()).alertas[0].clientid, "intruso");
+
+  // La presencia llega por MQTT: el cliente actualiza el Map y avisa
+  r.presencia.set("servicio/presencia", { nombre: "servicio", online: true });
+  r.avisarCambio();
+  assert.deepEqual((await siguiente()).presencia, [{ nombre: "servicio", online: true }]);
   await lector.cancel();
 
 });
@@ -177,9 +182,7 @@ test("decisión del admin", async (t) => {
   assert.equal((await decidir({ req_id: "viejo", decision: "ACEPTAR" })).status, 409); // vencida
 
   assert.equal((await decidir({ req_id: "r1", decision: "ACEPTAR" })).status, 200);
-  assert.deepEqual(r.publicados, [
-    { topic: "admin/decision", mensaje: { req_id: "r1", decision: "ACEPTAR", admin: "admin" } },
-  ]);
+  assert.deepEqual(r.publicados, [{ req_id: "r1", decision: "ACEPTAR", admin: "admin" }]);
   // Doble clic o segunda pestaña: no se manda otra decisión
   assert.equal((await decidir({ req_id: "r1", decision: "RECHAZAR" })).status, 409);
   assert.equal(r.publicados.length, 1);

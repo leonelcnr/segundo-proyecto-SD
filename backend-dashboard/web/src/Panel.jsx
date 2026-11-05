@@ -14,7 +14,7 @@ const iniciales = (nombre) => nombre.split(" ").map((p) => p[0]).join("").slice(
 const rechazada = (s) => s.resultado?.includes("DENEGADO");
 
 export default function Panel({ usuario, alSalir, alPerderSesion }) {
-  const [estado, setEstado] = useState({ pendientes: [], dispositivos: [], alertas: [] });
+  const [estado, setEstado] = useState({ pendientes: [], dispositivos: [], alertas: [], presencia: [] });
   const [conectado, setConectado] = useState(false);
   const [ahora, setAhora] = useState(Date.now());
 
@@ -41,7 +41,10 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
   const vigente = (s) => s.estado === "pendiente" && Date.parse(s.vence) > ahora;
   const pendientes = estado.pendientes.filter(vigente);
   const resueltas = estado.pendientes.filter((s) => !vigente(s)).slice(0, 5);
-  const servicio = estado.dispositivos.find((d) => d.clientid === "servicio_acceso");
+  // La presencia por MQTT (Last Will) manda; si todavía no llegó, se usa el webhook de conexión
+  const servicio =
+    estado.presencia.find((p) => p.nombre === "servicio") ??
+    estado.dispositivos.find((d) => d.clientid === "servicio_acceso");
 
   return (
     <div className="app">
@@ -92,7 +95,7 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
             <h2>Estado del sistema</h2>
             <div className="card estado">
               <Alertas alertas={estado.alertas} />
-              <Dispositivos dispositivos={estado.dispositivos} />
+              <Dispositivos dispositivos={estado.dispositivos} presencia={estado.presencia} />
             </div>
           </aside>
         </div>
@@ -218,7 +221,7 @@ function Alertas({ alertas }) {
   );
 }
 
-function Dispositivos({ dispositivos }) {
+function Dispositivos({ dispositivos, presencia }) {
   const enLinea = dispositivos.filter((d) => d.online).length;
   return (
     <section id="dispositivos" className="tramo crece">
@@ -232,6 +235,17 @@ function Dispositivos({ dispositivos }) {
             <div className="tenue chico">{d.online ? `desde ${hora(d.desde)}` : `${d.motivo ?? "desconectado"} · ${hora(d.desde)}`}</div>
           </div>
           <span className={`pildora ${d.online ? "bien" : "mal"}`}>{d.online ? "Online" : "Offline"}</span>
+        </div>
+      ))}
+
+      {presencia.length > 0 && <h3 className="subtitulo">Presencia (MQTT)</h3>}
+      {presencia.map((p) => (
+        <div key={`${p.sitio}/${p.nombre}`} className="renglon">
+          <div>
+            <div className="medio">{p.nombre}</div>
+            <div className="tenue chico">{p.sitio ? `${p.sitio} · ` : ""}desde {hora(p.desde)}</div>
+          </div>
+          <span className={`pildora ${p.online ? "bien" : "mal"}`}>{p.online ? "Online" : "Offline"}</span>
         </div>
       ))}
     </section>

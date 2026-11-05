@@ -4,13 +4,15 @@ const { calcularEstado } = require("../estado");
 
 const DECISIONES = ["ACEPTAR", "RECHAZAR"];
 
-// publicar(topic, mensaje) devuelve una promesa; al final será el cliente MQTT real
-function crearDashboard({ eventos, verificarToken, publicar }) {
+// publicar(mensaje) manda un pedido del admin al servicio y devuelve una promesa.
+// presencia: Map con la última presencia de cada puerta y del servicio (llega por MQTT).
+function crearDashboard({ eventos, presencia, verificarToken, publicar }) {
   // Navegadores conectados a /stream
   const clientes = new Set();
   // shortcut: manda el estado entero en cada aviso; mandar solo el cambio si el log crece mucho.
   const enviarEstado = (destinos) => {
-    const mensaje = `data: ${JSON.stringify(calcularEstado(eventos))}\n\n`;
+    const estado = { ...calcularEstado(eventos), presencia: [...presencia.values()] };
+    const mensaje = `data: ${JSON.stringify(estado)}\n\n`;
     for (const res of destinos) res.write(mensaje);
   };
 
@@ -43,7 +45,7 @@ function crearDashboard({ eventos, verificarToken, publicar }) {
 
     decididas.add(req_id);
     try {
-      await publicar("admin/decision", { req_id, decision, admin: req.username });
+      await publicar({ req_id, decision, admin: req.username });
     } catch (err) {
       decididas.delete(req_id); // no salió: que se pueda reintentar
       console.error(`No se pudo publicar la decisión de ${req_id}: ${err.message}`);

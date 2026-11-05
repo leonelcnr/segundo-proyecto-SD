@@ -117,6 +117,7 @@ a { color: inherit; }
 .tramo + .tramo { border-top: 1px solid var(--borde); }
 .tramo h3 { font-size: 13px; color: var(--tenue); margin-bottom: 6px; display: flex; justify-content: space-between; gap: 8px; }
 .tramo h3 span { font-weight: 500; }
+.tramo h3.subtitulo { margin-top: 12px; }
 .tramo.alerta { background: var(--alerta-fondo); }
 .tramo.alerta h3 { color: var(--mal-texto); }
 .tramo.alerta + .tramo { border-top-color: var(--mal-fondo); }

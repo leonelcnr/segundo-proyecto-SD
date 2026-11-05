@@ -270,9 +270,12 @@ Vistas de la página:
 - [ ] Pasar todo a config versionada o a un script de API, y probar borrar y recrear el container de EMQX.
 
 ### Fase 3: dashboard (día 3-5)
-- [ ] Login de admin.
-- [ ] App React con las 4 vistas y SSE, compilada en el Dockerfile.
-- [ ] Cliente MQTT por TLS que publica `admin/decision`.
+- [x] Login de admin.
+- [x] App React con el panel (boceto 4.1b) y SSE, compilada en el Dockerfile. Faltan las otras vistas.
+- [x] Cliente MQTT (`broker/conexion.js`) con los topics en `broker/topics.js`: publica en `usuario/{admin}/pedido` y escucha la presencia. Probado contra un EMQX local:
+  `docker run -d --name emqx-dev -p 127.0.0.1:1883:1883 -p 127.0.0.1:18083:18083 emqx/emqx:latest` y `MQTT_URL=mqtt://localhost:1883` en el `.env`.
+- [ ] Suscribirse a alarma, estado, eventos, telemetría y aviso cuando estén los formatos (sección 4 del documento de topics).
+- [ ] Probar con TLS (`mqtts://` + `MQTT_CA`) contra el broker real.
 - [ ] Prueba de punta a punta con el servicio real: tarjeta sin permiso → aparece en el dashboard → Aceptar → se abre la puerta.
 
 ### Fase 4: pruebas de falla y defensa (día 5-7)
