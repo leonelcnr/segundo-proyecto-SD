@@ -1,5 +1,3 @@
-// Arma lo que muestra el dashboard a partir del log de avisos ({tipo, recibido, datos}).
-// shortcut: recorre el log entero en cada llamada; si crece a decenas de miles de líneas, mantenerlo incremental.
 const EXPIRA_POR_DEFECTO = 45;
 
 // Hora del aviso según el broker (ms); si no vino, la de recepción.
@@ -9,7 +7,7 @@ const hora = (e) => {
 };
 const iso = (ms) => new Date(ms).toISOString();
 
-// "vencida" es solo lo que ve el dashboard: el que decide es el servicio, que manda ACCESO_EXPIRADO con via_admin
+
 function estadoDe(solicitud, ahora) {
   if (solicitud.resultado) return "resuelta";
   if (solicitud.vence <= ahora) return "vencida";
