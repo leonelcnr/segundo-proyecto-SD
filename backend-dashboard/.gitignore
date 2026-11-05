@@ -2,3 +2,5 @@ node_modules/
 data/
 .env
 dist/
+# Claves privadas: nunca al repo (ca.crt sí, es público)
+*.key
