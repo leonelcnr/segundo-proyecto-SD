@@ -1,15 +1,17 @@
-
 services:
   servicio-acceso:
     build: .
     container_name: servicio-acceso-lab
     restart: unless-stopped
+    env_file: .env
     environment:
-      - BROKER_HOST=host.docker.internal
-      - BROKER_PORT=1883
-      - PYTHONUNBUFFERED=1 # 👈 Esta línea hace que los print() salgan al instante
+      - BROKER_HOST=broker.puertas   # nombre que figura en el certificado del broker
+      - BROKER_PORT=8883             # MQTT con TLS
+      - MQTT_CA=/app/certs/ca.crt
+      - PYTHONUNBUFFERED=1
+      - TZ=America/Argentina/Buenos_Aires  # mismo huso que el dashboard: las fechas del protocolo son hora local
     extra_hosts:
-      - "host.docker.internal:host-gateway"
+      - "broker.puertas:${IP_BROKER}"
     volumes:
-      - ./datos.db:/app/datos.db
-
+      - ./datos.db:/app/datos.db       # la base queda fuera de la imagen: sobrevive a recrear el container
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
