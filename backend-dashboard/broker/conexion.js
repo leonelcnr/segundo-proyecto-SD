@@ -2,14 +2,25 @@
 // No conoce ningún formato: entrega el texto tal cual llegó y publica el objeto que le pasen.
 const fs = require("node:fs");
 const mqtt = require("mqtt");
+const jwt = require("jsonwebtoken");
+
+// Cuánto vale el JWT con el que el dashboard entra a EMQX. Corto: si alguien lo roba, sirve poco tiempo.
+const DURACION_JWT = 60 * 60; // segundos
 
 
-// alMensaje(topic, texto) se llama con cada mensaje de las suscripciones
+// JWT para el autenticador JWT de EMQX (HS256 con el secreto compartido). EMQX verifica la firma,
+// que no esté vencido y que el claim username coincida con el usuario de la conexión.
+const jwtMqtt = (usuario, secreto) => jwt.sign({ username: usuario }, secreto, { expiresIn: DURACION_JWT });
+
+
+// alMensaje(topic, texto) se llama con cada mensaje de las suscripciones.
+// clave puede ser un texto o una función que la genera (un JWT nuevo en cada conexión).
 function conectar({ url, usuario, clave, ca, suscripciones, alMensaje }) {
 
+  const generar = typeof clave === "function" ? clave : () => clave;
   const cliente = mqtt.connect(url, {
     username: usuario,
-    password: clave,
+    password: generar(),
     // El client ID es el usuario: la ACL es por usuario y la sesión persistente queda atada a él
     clientId: usuario,
     clean: false,
@@ -26,6 +37,8 @@ function conectar({ url, usuario, clave, ca, suscripciones, alMensaje }) {
   });
 
   cliente.on("close", () => console.warn("MQTT desconectado, reintentando..."));
+  // El JWT anterior puede haber vencido: cada reintento se presenta con uno nuevo
+  cliente.on("reconnect", () => (cliente.options.password = generar()));
   cliente.on("error", (err) => console.error(`MQTT: ${err.message}`));
   cliente.on("message", (topic, payload) => alMensaje(topic, payload.toString()));
 
@@ -41,4 +54,4 @@ function conectar({ url, usuario, clave, ca, suscripciones, alMensaje }) {
 }
 
 
-module.exports = { conectar };
+module.exports = { conectar, jwtMqtt };

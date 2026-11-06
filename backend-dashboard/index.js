@@ -3,7 +3,7 @@ const express = require("express");
 const { crearWebhooks } = require("./routes/webhooks");
 const { crearDashboard } = require("./routes/dashboard");
 const { crearAuth } = require("./routes/auth");
-const { conectar } = require("./broker/conexion");
+const { conectar, jwtMqtt } = require("./broker/conexion");
 const { SUSCRIPCIONES, pedido, aviso, crearMemoria, aplicar } = require("./broker/topics");
 
 
@@ -59,7 +59,8 @@ if (require.main === module) {
     mqtt = conectar({
       url: env.MQTT_URL,
       usuario: env.MQTT_USER,
-      clave: env.MQTT_PASSWORD,
+      // Con MQTT_JWT_SECRET se presenta con un JWT corto (autenticador JWT de EMQX); si no, con MQTT_PASSWORD
+      clave: env.MQTT_JWT_SECRET ? () => jwtMqtt(env.MQTT_USER, env.MQTT_JWT_SECRET) : env.MQTT_PASSWORD,
       ca: env.MQTT_CA,
       suscripciones: [...SUSCRIPCIONES, aviso(env.MQTT_USER)],
       alMensaje: (topic, texto) => aplicar(memoria, topic, texto) && avisarCambio(),

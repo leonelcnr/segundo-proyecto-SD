@@ -6,3 +6,4 @@ data
 *.test.js
 simulador.js
 web/dist
+*.key

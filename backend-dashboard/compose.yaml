@@ -12,6 +12,8 @@ services:
       - "${TAILSCALE_IP:-127.0.0.1}:3000:3000"
     volumes:
       - dashboard-data:/app/data
+      # La CA va dentro de la imagen igual (COPY .), esto deja cambiarla sin reconstruir
+      - ./certs/ca.crt:/app/certs/ca.crt:ro
 
 volumes:
   dashboard-data:

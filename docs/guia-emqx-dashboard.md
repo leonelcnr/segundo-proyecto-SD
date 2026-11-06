@@ -11,7 +11,7 @@
 |---|---|---|
 | 1 | Certificado firmado por la CA del grupo, **con el nombre de Tailscale del server** | Que el dashboard pueda verificar el broker |
 | 2 | Listener TLS (8883) con ese certificado y sin 1883 hacia afuera | MQTT cifrado |
-| 3 | Autenticación y usuario `admin-1` | Nadie entra sin usuario y clave |
+| 3 | Autenticación: JWT para el dashboard, usuario y clave para el resto | Nadie entra sin identificarse |
 | 4 | ACL del admin | `admin-1` solo publica su pedido y lee lo que muestra el panel |
 | 5 | Conector HTTP al receptor, con el header `X-Token` | Que los webhooks lleguen y el receptor los acepte |
 | 6 | Webhook directo y dos reglas | Conexiones, bloqueos de la ACL y alarmas |
@@ -67,16 +67,44 @@ En `compose-servidor-emqx.yaml`, servicio `emqx`:
 - Si el server publica los puertos con otros números (el panel hoy está en `18107`), **pasanos el puerto que corresponde al 8883**.
 - `emqx_data` se mantiene: ahí viven los usuarios, la ACL del panel, el conector y las reglas, y eso hace que sobrevivan si se recrea el container.
 
-## 3. Autenticación y usuario `admin-1`
+## 3. Autenticación: JWT para el dashboard, usuario y clave para el resto
 
-En el panel, **Control de acceso → Autenticación → Crear**:
+Se crean **dos autenticadores**, y el orden importa: EMQX los prueba de arriba hacia abajo. Si la clave no es un JWT, el primero la ignora y pasa al segundo.
+
+**3.1 JWT (primero).** **Control de acceso → Autenticación → Crear**:
+
+| Campo | Valor |
+|---|---|
+| Mecanismo | **JWT** |
+| JWT From | `password` |
+| Algoritmo | **JWT signed using HMAC** (HS256) |
+| Secret | el `MQTT_JWT_SECRET` que te pasamos **por privado** (`openssl rand -hex 32`) |
+| Secret Base64 encoded | **No** |
+| Disconnect After Expire | Sí (default) |
+| Verify Claims | `username` = `${username}` |
+
+- **Verify Claims** es lo que ata el token al usuario: sin eso, el JWT de `admin-1` serviría para entrar como cualquiera.
+- El dashboard firma un JWT nuevo de 1 hora en cada conexión. Cuando vence, EMQX lo desconecta y el dashboard vuelve a entrar con uno nuevo. Es un corte de un segundo, y la sesión persistente guarda los mensajes QoS 1.
+- `admin-1` **no** se crea como usuario: el JWT ya lo identifica.
+
+**3.2 Usuario y clave (segundo).** **Crear** otra vez:
 - Mecanismo: **Password-Based**
 - Backend: **Built-in Database**
 - Tipo de ID: `username`; hash: `sha256`, salt `suffix`.
 
-Después, en **Usuarios** de ese autenticador, crear `admin-1` con una clave larga, por ejemplo la que da `openssl rand -hex 16`.
+En **Usuarios** de este autenticador van las puertas, el servicio y, si hace falta, un `admin-2` para probar a mano.
 
-Con un autenticador creado, EMQX ya rechaza las conexiones anónimas (se probó: `Connection refused: Not authorized`).
+**Probado** contra EMQX 6.3.2 con los dos autenticadores en ese orden:
+
+| Intento | Resultado |
+|---|---|
+| `admin-1` con un JWT válido | conecta |
+| JWT firmado con otro secreto | `Not authorized` |
+| `admin-2` usando el JWT de `admin-1` | `Bad username or password` |
+| JWT vencido | `Bad username or password` |
+| `puerta-hall` con su clave | conecta |
+| `puerta-hall` con una clave mala | `Bad username or password` |
+| Conexión anónima | `Not authorized` |
 
 > El dashboard se conecta con **client ID = `admin-1`** y sesión persistente. Si otro cliente se conecta con el mismo client ID, EMQX echa al primero (*session takeover*). No usar `admin-1` para probar desde otra herramienta mientras el dashboard está conectado: crear `admin-2` para eso.
 
@@ -137,7 +165,6 @@ Después, borrar esas credenciales del README.
 | Dato | Por dónde |
 |---|---|
 | Puerto publicado del MQTT con TLS (el 8883 del container) | Cualquiera |
-| Clave de `admin-1` | **Por privado**, nunca por el grupo ni por el repo |
 | `ca.crt` | Cualquiera (es público) |
 
 **Lo que te pasamos nosotros:**
@@ -146,14 +173,15 @@ Después, borrar esas credenciales del README.
 |---|---|
 | IP o nombre de Tailscale del server del dashboard | Cualquiera |
 | `WEBHOOK_TOKEN` (el valor del header `X-Token`) | **Por privado** |
+| `MQTT_JWT_SECRET` (el secreto del autenticador JWT) | **Por privado** |
 
 Con eso, nuestro `.env` queda así:
 
 ```bash
-MQTT_URL=mqtts://sd-2026.tailb9d8eb.ts.net:<puerto-tls>
+MQTT_URL=mqtts://sd-2026.tailb9d8eb.ts.net:18108
 MQTT_USER=admin-1
-MQTT_PASSWORD=<clave de admin-1>
-MQTT_CA=<ruta a ca.crt>
+MQTT_JWT_SECRET=<el mismo del autenticador JWT>
+MQTT_CA=certs/ca.crt
 ```
 
 ## Cómo comprobar que quedó bien
@@ -168,7 +196,8 @@ MQTT_CA=<ruta a ca.crt>
 | Lo que se ve | Causa | Arreglo |
 |---|---|---|
 | `Connection refused: Not authorized` | El usuario no existe o la conexión fue anónima | Paso 3 |
-| `Connection refused: Bad username or password` | Clave equivocada | Revisar la clave de `admin-1` |
+| `Connection refused: Bad username or password` | Clave equivocada, o JWT vencido o de otro usuario | Revisar la clave, o que `MQTT_JWT_SECRET` y Verify Claims estén bien |
+| `Connection refused: Not authorized` con el dashboard | El secreto del JWT no coincide, o el autenticador JWT no está | Copiar el secreto de nuevo; paso 3.1 |
 | `ERR_TLS_CERT_ALTNAME_INVALID` | `sd-2026.tailb9d8eb.ts.net` no está en el certificado | Paso 1 (SAN) |
 | `SELF_SIGNED_CERT_IN_CHAIN` | El cliente no tiene la `ca.crt` correcta | Pasar `ca.crt` |
 | `Invalid header flag bits` | Conexión sin TLS al puerto TLS | Usar `mqtts://` |
