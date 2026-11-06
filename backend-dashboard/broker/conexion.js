@@ -24,6 +24,9 @@ function conectar({ url, usuario, clave, ca, suscripciones, alMensaje }) {
     // El client ID es el usuario: la ACL es por usuario y la sesión persistente queda atada a él
     clientId: usuario,
     clean: false,
+    // Si EMQX rechaza el usuario (por ejemplo, mientras se configura el autenticador) sigue reintentando cada 5 s
+    reconnectOnConnackError: true,
+    reconnectPeriod: 5000,
     // Con mqtts:// valida el certificado del broker contra la CA del proyecto
     ca: ca ? fs.readFileSync(ca) : undefined,
   });

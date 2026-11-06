@@ -20,7 +20,7 @@
 
 ## Red del laboratorio
 
-`sd-2026` es la única máquina con Tailscale. Reenvía **un puerto por compu**, con el número de la compu: `18107` → panel de alumno07, `18106` → alumno06. El MQTT no pasa por ahí: el broker y el dashboard se hablan directo por la red del laboratorio.
+`sd-2026` es la única máquina con Tailscale. Reenvía **un puerto por compu**, con el número de la compu, al puerto `18083` de esa compu: `18107` → panel de alumno07, `18106` → dashboard en alumno06 (y `221NN` → SSH). El reenvío llega a la compu por un túnel, a `127.0.0.1`: lo que se publique ahí tiene que escuchar también en localhost (en el dashboard, `IP_LAN=0.0.0.0`). El MQTT no pasa por ahí: el broker y el dashboard se hablan directo por la red del laboratorio.
 
 | Compu | IP en el laboratorio | Rol |
 |---|---|---|
