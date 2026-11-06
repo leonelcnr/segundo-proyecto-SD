@@ -1,0 +1,66 @@
+<div class="ph" data-phone>
+  <div class="ph-screen">
+    <div class="ph-notch"></div>
+    <div class="ph-status"><span>14:32</span><span>5G <i></i></span></div>
+    <div class="ph-head"><b>Salas</b><button type="button" class="ph-role" data-act="rol" data-rol="empleado">celular-1 · empleado</button></div>
+    <div class="ph-access">
+      <div class="ph-acc-row" data-acc="hall" data-st="fuera">
+        <span class="ph-dot"></span>
+        <span class="ph-acc-name"><b>Hall</b><span data-acc-txt="hall">Sin entrada · puerta común</span></span>
+        <button type="button" class="ph-btn" data-act="entrar-hall">Acercar celular</button>
+      </div>
+      <div class="ph-acc-row" data-acc="servidores" data-st="fuera">
+        <span class="ph-dot"></span>
+        <span class="ph-acc-name"><b>Servidores</b><span data-acc-txt="servidores">Sin entrada · privilegiada</span></span>
+        <button type="button" class="ph-btn" data-act="entrar-servidores">Pasar tarjeta</button>
+      </div>
+    </div>
+    <div class="ph-tabs" role="tablist">
+      <button type="button" class="ph-tab" role="tab" aria-selected="true" data-tab="hall">Hall</button>
+      <button type="button" class="ph-tab" role="tab" aria-selected="false" data-tab="servidores">Servidores</button>
+    </div>
+    <div class="ph-panels">
+      <section class="ph-panel" data-panel="hall">
+        <div class="ph-card" data-card="luz" style="--c:var(--sl-lamp)">
+          <span class="ph-lock" data-lock="luz"></span>
+          <div class="ph-card-h"><b>Luz</b><button type="button" class="ph-sw" role="switch" aria-checked="true" aria-label="Luz del hall" data-act="luz"></button></div>
+          <div class="ph-row"><input class="ph-range" type="range" min="10" max="100" step="5" value="80" aria-label="Intensidad" data-act="nivel"><span class="ph-sub" data-out="nivel">80 %</span></div>
+        </div>
+        <div class="ph-card" data-card="cortina" style="--c:#7d95a8">
+          <span class="ph-lock" data-lock="cortina"></span>
+          <div class="ph-card-h"><b>Cortina</b><span class="ph-sub" data-out="cortina">35 % cerrada</span></div>
+          <div class="ph-row"><div class="ph-seg"><button type="button" data-act="subir">▲ Subir</button><button type="button" data-act="parar">■</button><button type="button" data-act="bajar">▼ Bajar</button></div></div>
+          <div class="ph-row"><div class="ph-bar"><i data-out="cortina-bar"></i></div></div>
+        </div>
+        <div class="ph-card" data-card="clima" style="--c:var(--sl-cool)">
+          <span class="ph-lock" data-lock="clima"></span>
+          <div class="ph-card-h"><b>Aire acondicionado</b><button type="button" class="ph-sw" role="switch" aria-checked="true" aria-label="Aire acondicionado" data-act="clima"></button></div>
+          <div class="ph-row" style="justify-content:space-between"><span><span class="ph-big" data-out="t-hall">26.4°</span> <span class="ph-sub">ahora</span></span><span class="ph-step"><button type="button" data-act="sp-">−</button><output data-out="sp-hall">23.0°</output><button type="button" data-act="sp+">+</button></span></div>
+          <div class="ph-row"><div class="ph-seg"><button type="button" aria-pressed="true" data-act="frio">Frío</button><button type="button" aria-pressed="false" data-act="calor">Calor</button></div></div>
+        </div>
+        <div class="ph-gate"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><b>Hall bloqueado</b>Acercá el celular al lector de la puerta. Con la entrada concedida podés controlar la sala.</div>
+      </section>
+      <section class="ph-panel" data-panel="servidores" hidden>
+        <div class="ph-card" data-card="crac" style="--c:var(--sl-cool)">
+          <span class="ph-lock" data-lock="crac"></span>
+          <div class="ph-card-h"><b>Aire de precisión</b><span class="ph-sub" data-out="crac-st">refrigerando</span></div>
+          <div class="ph-row" style="justify-content:space-between"><span><span class="ph-big" data-out="t-srv">22.6°</span> <span class="ph-sub">sala</span></span><span class="ph-step"><button type="button" data-act="ssp-">−</button><output data-out="sp-srv">22.0°</output><button type="button" data-act="ssp+">+</button></span></div>
+          <div class="ph-row" style="justify-content:space-between"><span class="ph-sub">Ventilación y refrigeración</span><button type="button" class="ph-sw locked" role="switch" aria-checked="true" aria-label="Refrigeración (no se puede apagar)" data-act="vent"></button></div>
+        </div>
+        <div class="ph-card" data-card="sluz" style="--c:var(--sl-lamp)">
+          <span class="ph-lock" data-lock="sluz"></span>
+          <div class="ph-card-h"><b>Luz</b></div>
+          <div class="ph-row"><div class="ph-seg"><button type="button" aria-pressed="true" data-act="normal">Normal</button><button type="button" aria-pressed="false" data-act="ahorro">Ahorro</button><button type="button" aria-pressed="false" data-act="apagar">Apagar</button></div></div>
+        </div>
+        <div class="ph-card" data-card="energia" style="--c:var(--sl-ok)">
+          <div class="ph-card-h"><b>Energía</b><span class="ph-ro">sólo lectura</span></div>
+          <div class="ph-row" style="justify-content:space-between"><span><span class="ph-big" data-out="kw">4.2</span> <span class="ph-sub">kW</span></span><span class="ph-sub" data-out="ups">UPS 100 % · red OK</span></div>
+        </div>
+        <div class="ph-gate"><svg viewBox="0 0 24 24"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V8a4 4 0 0 1 8 0v3"/></svg><b>Sala privilegiada</b>Pasá tu tarjeta por el lector de Servidores. Un empleado espera que un admin lo apruebe.</div>
+      </section>
+    </div>
+    <div class="ph-toast" data-toast><b></b><span></span></div>
+    <div class="ph-home"></div>
+    <div class="finger" data-finger></div>
+  </div>
+</div>
