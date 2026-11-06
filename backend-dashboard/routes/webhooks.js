@@ -66,6 +66,8 @@ function crearWebhooks({ token, dataDir, alGuardar }) {
   router.post("/seguridad", recibir("alerta", () => true));
   // Regla: evento con tipo = 'alarma' en acceso/+/eventos
   router.post("/alarmas", recibir("alarma", (d) => texto(d.puerta)));
+  // Regla: la sala de servidores pasó los 27 °C (sala/+/servidores/telemetria). El topic dice de qué sala es
+  router.post("/ambiente", recibir("ambiente", (d) => typeof d.temp === "number" && texto(d.topic)));
   return { router, eventos };
 }
 

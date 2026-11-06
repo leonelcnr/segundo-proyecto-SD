@@ -66,6 +66,8 @@ test("receptor de webhooks", async (t) => {
     assert.equal((await r.post("/webhook/conexiones", { event: "client.connected" })).status, 400);
     assert.equal((await r.post("/webhook/conexiones", { event: "client.connected", clientid: 5 })).status, 400);
     assert.equal((await r.post("/webhook/alarmas", { persona: "Beto" })).status, 400);
+    assert.equal((await r.post("/webhook/ambiente", { temp: "28", topic: "sala/edificio1/servidores/telemetria" })).status, 400);
+    assert.equal((await r.post("/webhook/ambiente", { temp: 28 })).status, 400);
   });
 
   await t.test("guarda cada aviso una sola vez", async () => {
@@ -118,8 +120,8 @@ test("stream: manda el estado al conectarse y otra vez con cada novedad", async 
   const siguiente = async () => JSON.parse((await lector.read()).value.replace(/^data: /, ""));
 
   assert.deepEqual(await siguiente(), {
-    dispositivos: [], alertas: [], alarmasWebhook: [],
-    pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [],
+    dispositivos: [], alertas: [], alarmasWebhook: [], alertasAmbiente: [],
+    pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [], salas: [],
   });
 
   // Webhook

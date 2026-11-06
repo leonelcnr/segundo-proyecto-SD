@@ -6,7 +6,7 @@ const mqtt = require("mqtt");
 const URL_BASE = process.env.URL || "http://localhost:3000";
 const TOKEN = process.env.WEBHOOK_TOKEN;
 const SITIO = "edificio1";
-const PAUSA = 2000; // ms entre paso y paso, para verlos llegar de a uno
+const PAUSA = Number(process.env.PAUSA ?? 2000); // ms entre paso y paso, para verlos llegar de a uno
 
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 // Hora local sin zona, como las fechas del protocolo
@@ -43,6 +43,7 @@ async function main() {
 
   // Arranca todo: servicio y puertas online (lo que el broker avisa también por webhook)
   await publicar("servicio/presencia", "online", true);
+  await publicar("servicio-salas/presencia", "online", true);
   for (const p of ["puerta-hall", "puerta-servidores"]) {
     await publicar(`${puerta(p)}/presencia`, "online", true);
     await webhook("/webhook/conexiones", { event: "client.connected", clientid: p, username: p, timestamp: Date.now() });
@@ -51,6 +52,24 @@ async function main() {
 
   // Acceso común de Ana (6.1)
   await evento({ tipo: "acceso", puerta: "puerta-hall", persona: "Ana", uid: "31A7506E", detalle: "directo" });
+
+  // Salas (docs/protocolo-salas.md): Ana queda dentro del hall y baja la cortina desde el celular
+  const sala = (s) => `sala/${SITIO}/${s}`;
+  await publicar(`acceso/${SITIO}/sala/hall/ocupantes`, [
+    { persona: "Ana", usuario: "celular-1", rol: "empleado", desde: local(), vence: local(Date.now() + 15 * 60_000) },
+  ], true);
+  const hall = { luz: true, nivel: 80, cortina: 35, cortina_objetivo: 35, clima: true, modo: "frio", consigna: 23, temp: 25.7, bloqueos: {} };
+  await publicar(`${sala("hall")}/estado`, { ...hall, ts: local() }, true);
+  await publicar(`${sala("hall")}/eventos`, { tipo: "sala_accion", persona: "Ana", usuario: "celular-1", disp: "cortina", accion: "bajar", valor: null, ts: local(), detalle: "cortina 35 % → 100 %" });
+  await publicar(`${sala("hall")}/estado`, { ...hall, cortina: 100, cortina_objetivo: 100, ts: local() }, true);
+
+  // Falla el aire de precisión: la sala de servidores pasa los 27 °C y la regla de EMQX llama al receptor
+  for (const temp of [26.2, 27.4, 28.1]) {
+    await publicar(`${sala("servidores")}/telemetria`, { temp, ts: local() });
+    if (temp > 27) await webhook("/webhook/ambiente", { temp, topic: `${sala("servidores")}/telemetria`, timestamp: Date.now() });
+  }
+  await publicar(`${sala("servidores")}/estado`, { luz: "normal", consigna: 22, temp: 28.1, kw: 4.2, falla_crac: true, alarma: true, bloqueos: {}, ts: local() }, true);
+  await publicar(`${sala("servidores")}/eventos`, { tipo: "alarma_ambiente", ts: local(), detalle: "28.1 °C, falla del aire de precisión" });
 
   // Beto pide entrar a servidores: queda pendiente 30 s y se puede decidir desde el dashboard (6.2)
   const req_id = `puerta-servidores-${Math.random().toString(16).slice(2, 10)}`;

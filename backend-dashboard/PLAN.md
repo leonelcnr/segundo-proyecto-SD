@@ -274,8 +274,27 @@ Vistas de la página:
 - [x] Cliente MQTT (`broker/conexion.js`) con los topics en `broker/topics.js`: publica en `usuario/{admin}/pedido` y escucha la presencia. Probado contra un EMQX local:
   `docker run -d --name emqx-dev -p 127.0.0.1:1883:1883 -p 127.0.0.1:18083:18083 emqx/emqx:latest` y `MQTT_URL=mqtt://localhost:1883` en el `.env`.
 - [x] Adaptado al protocolo del grupo ("Protocolo MQTT del sistema de puertas"): suscripción a estado, eventos, alarma, presencia, telemetría y aviso; pedidos con el formato 4.8 (decisión y reconocer alarma); webhooks en /webhook/conexiones, /seguridad y /alarmas con X-Token. Probado con `simulador.js` contra el EMQX local.
-- [ ] Probar con TLS (`mqtts://` + `MQTT_CA`) contra el broker real.
+- [x] Probado con TLS (`mqtts://broker.puertas:8883` + CA del grupo) y JWT contra el broker real (alumno07), con webhooks y ACL funcionando (06/11).
+- [ ] Alerta de seguridad: mostrar el usuario además del client ID ("admin-1 (prueba-acl) intentó publicar…").
+- [ ] Avisar en los logs si la ACL niega una suscripción: EMQX responde código 128 en el SUBACK y hoy `conexion.js` solo mira `err`.
 - [ ] Prueba de punta a punta con el servicio real: tarjeta sin permiso → aparece en el dashboard → Aceptar → se abre la puerta.
+
+### Fase 3b: salas en el dashboard (requerimiento nuevo de la cátedra)
+Fuente: "Arquitectura del sistema.md" (06/11), secciones 3 y 7, y la maqueta `salas-iso` (Anatomy). Cuando alguien entra a una sala, la puede controlar desde el celular (luz, cortina, aire); el dashboard tiene que mostrar lo que pasa adentro.
+- [ ] Acordar con el grupo los topics y formatos de salas (todavía no están en el documento del protocolo). En la maqueta: `acceso/{sitio}/sala/{sala}/ocupantes` (retenido, quién está dentro y hasta cuándo), `sala/{sitio}/{sala}/estado` (retenido: luz, cortina, aire, temperatura), `servicio-salas/presencia`.
+- [ ] Suscribir el dashboard a esos topics (`broker/topics.js`: `SUSCRIPCIONES`, `aplicar`, `vista`) y sumarlos a la ACL `^admin-`.
+- [ ] Mostrar en el panel: quién está en cada sala y hasta cuándo, el estado de cada sala, y las acciones de los usuarios adentro (eventos `sala_rechazo` y `uso_indebido` en `acceso/{sitio}/eventos`).
+- [ ] Presencia del servicio de salas (`servicio-salas/presencia`) en Dispositivos.
+- [ ] Webhook nuevo: regla de EMQX que avisa si la sala de servidores pasa los 27 °C → ruta nueva en el receptor (por ejemplo `/webhook/temperatura`) y alerta en el panel.
+- [ ] Opcional: servir la vista de salas (`salas-iso`, sólo lectura) desde nuestro server, conectada al broker en lugar del modo demo.
+
+- [ ] Sección "Salas" en el dashboard con la vista isométrica (`salas-iso`): página aparte servida por Express detrás del login, embebida en el panel, que lea el estado de `/stream` (la cookie ya viaja) en lugar de simularlo; dejar el modo demo como respaldo.
+- [ ] Sección "Arquitectura" con el diagrama isométrico, actualizado a la red real (alumno07 + sslh, alumno06, sd-2026). El HTML viejo está en el historial (`estructura.html`, commit 925ddc5); el código fuente no está, hay que regenerarlo.
+
+### Mejoras de seguridad (para después)
+- [ ] JWT con RS256: Node firma con una clave privada RSA y el autenticador JWT de EMQX pasa de hmac-based a public-key. Así EMQX puede verificar tokens pero no fabricarlos (lo que plantea "Arquitectura del sistema.md").
+- [ ] MySQL del broker (alumno07): claves con sha256 + sal en `mqtt_user` y cambiar el autenticador a juego (Password Hash sha256, Salt Position suffix, SQL con `salt`). Hacer la migración y el cambio del autenticador juntos.
+- [ ] Cerrar el 3307 de `mysql-lab` (`127.0.0.1:3307:3306`) y los puertos de `emqx-lab` que no hacen falta en la LAN (1883).
 
 ### Fase 4: pruebas de falla y defensa (día 5-7)
 - [x] Receptor caído: el broker encola y entrega cuando vuelve (visto en local, falta en el real).
