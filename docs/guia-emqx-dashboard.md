@@ -18,11 +18,24 @@
 | 7 | Clave del panel de EMQX | Que no quede `admin` / `public` |
 | 8 | Intercambio de datos | Lo que nos pasamos entre los dos |
 
+## Red del laboratorio
+
+`sd-2026` es la única máquina con Tailscale. Reenvía **un puerto por compu**, con el número de la compu: `18107` → panel de alumno07, `18106` → alumno06. El MQTT no pasa por ahí: el broker y el dashboard se hablan directo por la red del laboratorio.
+
+| Compu | IP en el laboratorio | Rol |
+|---|---|---|
+| alumno07 | `10.51.2.162` | Broker EMQX (`emqx-lab`), panel por `sd-2026.tailb9d8eb.ts.net:18107` |
+| alumno06 | `10.51.2.183` | Dashboard: recibe los webhooks y el navegador del admin entra por `sd-2026.tailb9d8eb.ts.net:18106` |
+
+Probado desde alumno06: `nc -vz 10.51.2.162 8883` conecta, y `openssl s_client -connect 10.51.2.162:8883 -servername broker.puertas -verify_hostname broker.puertas -CAfile ca.crt` da `Verify return code: 0 (ok)`.
+
+> El `18108` de `sd-2026` es el EMQX de **alumno08**: no es el nuestro.
+
 ---
 
 ## 1. Certificado del broker
 
-El dashboard se conecta a `sd-2026.tailb9d8eb.ts.net`, y Node rechaza la conexión si ese nombre no figura en el certificado (error `ERR_TLS_CERT_ALTNAME_INVALID`). Las puertas, en cambio, verifican `broker.puertas`. Por eso el certificado tiene que llevar **los dos nombres** en el SAN (Subject Alternative Name).
+Las puertas y el dashboard verifican el nombre `broker.puertas`, y Node rechaza la conexión si ese nombre no figura en el certificado (error `ERR_TLS_CERT_ALTNAME_INVALID`). El dashboard lo resuelve con `extra_hosts` en su compose (`broker.puertas` → `10.51.2.162`). `sd-2026.tailb9d8eb.ts.net` queda en el SAN por si algún día se publica el MQTT por Tailscale.
 
 Si ya existe un `broker.crt` que solo dice `broker.puertas`, hay que volver a firmarlo. La CA (`ca.key` / `ca.crt`) se puede reutilizar, así que a las puertas no hay que cambiarles nada.
 
@@ -143,7 +156,7 @@ Si se prefiere el panel, los pasos 5 y 6 explican lo mismo a mano.
 | Campo | Valor |
 |---|---|
 | Nombre | `receptor` |
-| URL | `http://<ip-o-nombre-tailscale-del-server-del-dashboard>:3000` (te lo pasamos) |
+| URL | `http://10.51.2.183:18083` (alumno06; el puerto es el `PUERTO` del `.env` del dashboard) |
 | Header | `X-Token` = `<WEBHOOK_TOKEN>` (te lo pasamos por privado) |
 | Header | `content-type` = `application/json` |
 
@@ -179,7 +192,6 @@ Después, borrar esas credenciales del README.
 
 | Dato | Por dónde |
 |---|---|
-| Puerto publicado del MQTT con TLS (el 8883 del container) | Cualquiera |
 | `ca.crt` | Cualquiera (es público) |
 
 **Lo que te pasamos nosotros:**
@@ -193,7 +205,9 @@ Después, borrar esas credenciales del README.
 Con eso, nuestro `.env` queda así:
 
 ```bash
-MQTT_URL=mqtts://sd-2026.tailb9d8eb.ts.net:18108
+IP_LAN=10.51.2.183
+IP_BROKER=10.51.2.162
+MQTT_URL=mqtts://broker.puertas:8883
 MQTT_USER=admin-1
 MQTT_JWT_SECRET=<el mismo del autenticador JWT>
 MQTT_CA=certs/ca.crt
@@ -201,7 +215,7 @@ MQTT_CA=certs/ca.crt
 
 ## Cómo comprobar que quedó bien
 
-1. **Desde nuestro lado:** al levantar el dashboard tiene que aparecer `MQTT conectado a mqtts://sd-2026…`.
+1. **Desde nuestro lado:** al levantar el dashboard tiene que aparecer `MQTT conectado a mqtts://broker.puertas:8883`.
 2. **En el panel de EMQX:** en **Clientes**, `admin-1` figura conectado.
 3. **En los logs del receptor:** al conectarse cualquier cliente aparece una línea `[conexion] …`.
 4. **Regla de seguridad:** con mosquitto, publicar como `admin-2` en `usuario/admin-1/pedido`. En el receptor tiene que aparecer `[alerta] …`, y en el panel de EMQX, la métrica de la regla tiene que subir.
@@ -213,7 +227,7 @@ MQTT_CA=certs/ca.crt
 | `Connection refused: Not authorized` | El usuario no existe o la conexión fue anónima | Paso 3 |
 | `Connection refused: Bad username or password` | Clave equivocada, o JWT vencido o de otro usuario | Revisar la clave, o que `MQTT_JWT_SECRET` y Verify Claims estén bien |
 | `Connection refused: Not authorized` con el dashboard | El secreto del JWT no coincide, o el autenticador JWT no está | Copiar el secreto de nuevo; paso 3.1 |
-| `ERR_TLS_CERT_ALTNAME_INVALID` | `sd-2026.tailb9d8eb.ts.net` no está en el certificado | Paso 1 (SAN) |
+| `ERR_TLS_CERT_ALTNAME_INVALID` | El dashboard se conectó por IP o con un nombre que no está en el certificado | Usar `broker.puertas` con `IP_BROKER` (sección Red) |
 | `SELF_SIGNED_CERT_IN_CHAIN` | El cliente no tiene la `ca.crt` correcta | Pasar `ca.crt` |
 | `Invalid header flag bits` | Conexión sin TLS al puerto TLS | Usar `mqtts://` |
 | Conector en *timeout* | EMQX no llega al receptor | IP del receptor, que esté corriendo, firewall |
