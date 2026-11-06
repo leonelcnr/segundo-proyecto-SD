@@ -145,4 +145,4 @@ body[data-theme="light"] .iso-page{margin-top:40px}
 @keyframes sl-in{from{opacity:0;transform:translateY(-4px)}}
 @media (max-width:880px){.sl-bus li{grid-template-columns:14px 1fr}.sl-bus li .d{grid-column:2}}
 @media (max-width:520px){.iso-plate-corner[data-corner="hint"]{display:none}.iso-plate-corner[data-corner="readout"]{font-size:9.5px;letter-spacing:.04em}}
-.vivo .iso-page{margin:16px auto}.vivo .sl-body{grid-template-columns:1fr}.vivo .sl-side,.vivo .sl-demo,.vivo .iso-legend{display:none}
+.vivo .iso-page{width:min(780px,100% - 32px);margin:12px auto}.vivo .sl-body{grid-template-columns:1fr}.vivo .sl-side,.vivo .sl-demo,.vivo .iso-legend{display:none}
