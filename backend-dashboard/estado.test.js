@@ -36,3 +36,18 @@ test("alertas y alarmas: la más nueva primero", () => {
   assert.deepEqual(alertas.map((a) => a.clientid), ["b", "a"]);
   assert.deepEqual(alarmasWebhook.map((a) => a.puerta), ["puerta-servidores", "puerta-hall"]);
 });
+
+
+test("ambiente: una alerta por sala, con la última temperatura", () => {
+
+  const topic = "sala/edificio1/servidores/telemetria";
+  const eventos = [
+    ev("ambiente", { topic, temp: 27.4, timestamp: T0 }),
+    ev("ambiente", { topic, temp: 28.1, timestamp: T0 + 20_000 }),
+    // Reintento viejo de EMQX: no pisa la última
+    ev("ambiente", { topic, temp: 27.6, timestamp: T0 + 10_000 }),
+  ];
+  assert.deepEqual(calcularEstado(eventos).alertasAmbiente, [
+    { sitio: "edificio1", sala: "servidores", temp: 28.1, desde: new Date(T0).toISOString(), ultima: new Date(T0 + 20_000).toISOString() },
+  ]);
+});

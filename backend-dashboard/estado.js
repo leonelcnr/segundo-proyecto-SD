@@ -13,6 +13,8 @@ function calcularEstado(eventos) {
   const dispositivos = new Map();
   const alertas = [];
   const alarmas = [];
+  // Mientras la sala siga caliente llega un aviso por cada telemetría: queda sólo el último de cada sala
+  const ambiente = new Map();
 
   for (const e of eventos) {
     const d = e.datos;
@@ -27,6 +29,11 @@ function calcularEstado(eventos) {
       alertas.push({ ...d, recibido: e.recibido });
     } else if (e.tipo === "alarma") {
       alarmas.push({ ...d, recibido: e.recibido });
+    } else if (e.tipo === "ambiente") {
+      const [, sitio, sala] = d.topic.split("/");
+      const previo = ambiente.get(d.topic);
+      if (previo && previo.ms > t) continue;
+      ambiente.set(d.topic, { sitio, sala, temp: d.temp, ms: t, desde: previo?.desde ?? iso(t) });
     }
   }
 
@@ -34,7 +41,8 @@ function calcularEstado(eventos) {
     .sort((a, b) => a.clientid.localeCompare(b.clientid))
     .map((x) => ({ clientid: x.clientid, online: x.online, desde: iso(x.ms), motivo: x.motivo }));
 
-  return { dispositivos: listaDispositivos, alertas: alertas.reverse(), alarmasWebhook: alarmas.reverse() };
+  const alertasAmbiente = [...ambiente.values()].map(({ ms, ...a }) => ({ ...a, ultima: iso(ms) }));
+  return { dispositivos: listaDispositivos, alertas: alertas.reverse(), alarmasWebhook: alarmas.reverse(), alertasAmbiente };
 }
 
 

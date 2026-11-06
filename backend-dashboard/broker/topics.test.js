@@ -85,3 +85,38 @@ test("alarma, telemetría y avisos", () => {
   recibir(m, "acceso/edificio1/alarma", { activa: false });
   assert.equal(vista(m).alarmas[0].activa, false);
 });
+
+
+test("salas: ocupantes, estado y telemetría se juntan por sala", () => {
+
+  const m = crearMemoria();
+  const ana = { persona: "Ana", usuario: "celular-1", rol: "empleado", desde: "2026-11-06T14:32:10", vence: "2026-11-06T14:47:10" };
+  assert.equal(recibir(m, "acceso/edificio1/sala/hall/ocupantes", [ana, "…"]), true);
+  assert.equal(recibir(m, "sala/edificio1/hall/estado", { luz: true, nivel: 80, ts: "2026-11-06T14:32:40" }), true);
+  assert.equal(recibir(m, "sala/edificio1/servidores/telemetria", { temp: 27.4, ts: "2026-11-06T14:40:10" }), true);
+  // ocupantes tiene que ser una lista y la telemetría traer temp numérica
+  assert.equal(recibir(m, "acceso/edificio1/sala/hall/ocupantes", { persona: "Ana" }), false);
+  assert.equal(recibir(m, "sala/edificio1/servidores/telemetria", { temp: "27" }), false);
+
+  assert.deepEqual(vista(m).salas, [
+    { sitio: "edificio1", sala: "hall", estado: { luz: true, nivel: 80, ts: local("2026-11-06T14:32:40") }, temp: null,
+      ocupantes: [{ ...ana, desde: local(ana.desde), vence: local(ana.vence) }] },
+    { sitio: "edificio1", sala: "servidores", estado: null, ocupantes: [], temp: { valor: 27.4, recibida: AHORA } },
+  ]);
+
+  // Sala vacía: lista vacía
+  recibir(m, "acceso/edificio1/sala/hall/ocupantes", []);
+  assert.deepEqual(vista(m).salas[0].ocupantes, []);
+});
+
+
+test("salas: los eventos van con los de las puertas y el servicio de salas tiene presencia", () => {
+
+  const m = crearMemoria();
+  recibir(m, "acceso/edificio1/eventos", { tipo: "acceso", puerta: "puerta-hall", persona: "Ana", ts: "2026-11-06T14:32:10" });
+  recibir(m, "sala/edificio1/hall/eventos", { tipo: "sala_accion", persona: "Ana", disp: "cortina", ts: "2026-11-06T14:33:12", detalle: "cortina 35 % → 100 %" });
+  assert.deepEqual(vista(m).eventos.map((e) => [e.tipo, e.sala]), [["sala_accion", "hall"], ["acceso", undefined]]);
+
+  assert.equal(recibir(m, "servicio-salas/presencia", "online"), true);
+  assert.deepEqual(vista(m).presencia, [{ nombre: "servicio-salas", sitio: null, online: true, desde: AHORA }]);
+});

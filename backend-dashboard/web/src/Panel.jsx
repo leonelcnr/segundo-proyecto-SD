@@ -5,7 +5,7 @@ const hora = (fecha) => new Date(fecha).toLocaleTimeString("es-AR", { hour12: fa
 
 const iniciales = (nombre = "") => nombre.split(/[ -]/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
-const VACIO = { pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [], dispositivos: [], alertas: [], alarmasWebhook: [] };
+const VACIO = { pendientes: [], eventos: [], alarmas: [], presencia: [], telemetria: [], avisos: [], dispositivos: [], alertas: [], alarmasWebhook: [], salas: [], alertasAmbiente: [] };
 
 // POST a la API del dashboard. Devuelve "" si salió bien, o el texto del error.
 async function pedir(ruta, body, alPerderSesion) {
@@ -62,6 +62,7 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
         <a href="#dispositivos" className="item">Dispositivos</a>
         <a href="#alertas" className="item">Alertas</a>
         <a href="#actividad" className="item">Actividad</a>
+        <a href="#salas" className="item">Salas</a>
         <div className="usuario">
           <div className="avatar chico" aria-hidden="true">{iniciales(usuario)}</div>
           <span>{usuario}</span>
@@ -124,6 +125,8 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
           </section>
           <Actividad estado={estado} />
         </div>
+
+        <Salas estado={estado} />
       </main>
     </div>
   );
@@ -241,7 +244,8 @@ function Alertas({ alertas }) {
 
 function Dispositivos({ estado }) {
 
-  const puertas = estado.presencia.filter((p) => p.nombre !== "servicio");
+  // Los servicios no tienen sitio: sólo las puertas
+  const puertas = estado.presencia.filter((p) => p.sitio);
   const enLinea = puertas.filter((p) => p.online).length;
   const telemetria = (p) => estado.telemetria.find((t) => t.puerta === p.nombre && t.sitio === p.sitio);
 
@@ -289,7 +293,7 @@ function Dispositivos({ estado }) {
 function Actividad({ estado }) {
 
   const items = [
-    ...estado.eventos.map((e) => ({ t: e.ts, texto: `${e.tipo}: ${e.persona ?? e.puerta ?? ""} ${e.detalle ? `(${e.detalle})` : ""}` })),
+    ...estado.eventos.map((e) => ({ t: e.ts, texto: `${e.tipo}: ${e.persona ?? e.puerta ?? ""}${e.sala ? ` en ${e.sala}` : ""} ${e.detalle ? `(${e.detalle})` : ""}` })),
     ...estado.dispositivos.map((d) => ({
       t: d.desde,
       texto: d.online ? `${d.clientid} se conectó` : `${d.clientid} se desconectó (${d.motivo ?? "sin motivo"})`,
@@ -312,6 +316,57 @@ function Actividad({ estado }) {
           </li>
         ))}
       </ol>
+    </section>
+  );
+}
+
+
+// shortcut: vista provisoria en lista; después va la vista isométrica (salas-iso) alimentada por el mismo /stream
+function Salas({ estado }) {
+
+  const servicio = estado.presencia.find((p) => p.nombre === "servicio-salas");
+  const caliente = (s) => estado.alertasAmbiente.find((a) => a.sitio === s.sitio && a.sala === s.sala);
+
+  return (
+    <section id="salas" className="card bloque">
+      <h2>
+        Salas{" "}
+        {servicio && <span className={`pildora ${servicio.online ? "bien" : "mal"}`}>Servicio de salas {servicio.online ? "conectado" : "desconectado"}</span>}
+      </h2>
+      {estado.salas.length === 0 && <p className="tenue">Todavía no llegó nada de las salas.</p>}
+      {estado.salas.map((s) => {
+        const e = s.estado ?? {};
+        const alerta = caliente(s);
+        const temp = s.temp?.valor ?? e.temp;
+        // El webhook queda en el log aunque la sala ya se haya enfriado: si hay estado, manda el estado
+        const alta = s.estado ? e.alarma : Boolean(alerta);
+        return (
+          <div key={`${s.sitio}/${s.sala}`} className="renglon">
+            <div>
+              <div className="medio">{s.sala} <span className="tenue chico">· {s.sitio}</span></div>
+              <div className="tenue chico">
+                {temp != null && `${temp} °C`}
+                {e.consigna != null && ` · consigna ${e.consigna} °C`}
+                {typeof e.luz === "boolean" ? ` · luz ${e.luz ? `${e.nivel ?? ""} %` : "apagada"}` : e.luz && ` · luz ${e.luz}`}
+                {e.cortina != null && ` · cortina ${e.cortina} %`}
+                {e.kw != null && ` · ${e.kw} kW`}
+              </div>
+              <div className="tenue chico">
+                {s.ocupantes.length === 0
+                  ? "Vacía"
+                  : `Dentro: ${s.ocupantes.map((o) => `${o.persona}${o.vence ? ` (hasta ${hora(o.vence)})` : ""}`).join(", ")}`}
+              </div>
+            </div>
+            {alta ? (
+              <span className="pildora mal">{alerta ? `Pasó los 27 °C a las ${hora(alerta.desde)}` : "Temperatura alta"}</span>
+            ) : e.falla_crac ? (
+              <span className="pildora mal">Falla del aire</span>
+            ) : (
+              <span className="pildora bien">Normal</span>
+            )}
+          </div>
+        );
+      })}
     </section>
   );
 }
