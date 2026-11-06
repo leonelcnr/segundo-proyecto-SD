@@ -1,0 +1,15 @@
+{
+  "name": "receptor-dashboard",
+  "private": true,
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "node --test",
+    "simular": "node simulador.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "jsonwebtoken": "^9.0.3",
+    "mqtt": "^5.16.1"
+  }
+}

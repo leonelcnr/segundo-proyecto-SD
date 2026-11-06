@@ -1,0 +1,9 @@
+**/node_modules
+data
+.env
+*.md
+*.docx
+*.test.js
+simulador.js
+web/dist
+*.key
