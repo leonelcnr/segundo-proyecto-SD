@@ -263,11 +263,12 @@ Vistas de la página:
 - [x] Probar con `curl` (con y sin token: 200 y 401).
 
 ### Fase 2: webhooks en EMQX (día 2-3)
-- [ ] Crear el conector HTTP con el header `Authorization`.
-- [ ] Webhook directo (connect y disconnect) y verificar que llega.
-- [ ] Regla A (pendientes) y probar publicando a mano una `respuesta` con `estado=pendiente`.
-- [ ] Regla B (authz deny) y probar publicando en un topic prohibido.
-- [ ] Pasar todo a config versionada o a un script de API, y probar borrar y recrear el container de EMQX.
+- [x] Crear el conector HTTP con el header `X-Token`.
+- [x] Webhook directo (connect y disconnect) y verificar que llega.
+- [x] Regla de alarmas (`acceso/+/eventos` con `tipo = 'alarma'`, reemplaza a la regla A con el protocolo del grupo) y probada publicando a mano.
+- [x] Regla de seguridad (authz deny) y probada publicando en un topic prohibido y con un `subscribe #`.
+- [x] Versionado en `emqx/webhooks.hocon` + `emqx/configurar.sh` (`emqx ctl conf load`). Probado contra un EMQX recién creado y corriéndolo dos veces.
+- [ ] Correr `configurar.sh` en el broker real (Server A) con la IP del receptor y el token real.
 
 ### Fase 3: dashboard (día 3-5)
 - [x] Login de admin.
@@ -279,7 +280,7 @@ Vistas de la página:
 - [ ] Prueba de punta a punta con el servicio real: tarjeta sin permiso → aparece en el dashboard → Aceptar → se abre la puerta.
 
 ### Fase 4: pruebas de falla y defensa (día 5-7)
-- [ ] Receptor caído: el broker encola y entrega cuando vuelve.
+- [x] Receptor caído: el broker encola y entrega cuando vuelve (visto en local, falta en el real).
 - [ ] Webhook falso desde otra máquina: responde 401 y no se muestra.
 - [ ] Cliente tramposo que publica en `admin/decision` con otro usuario: ACL deny y aparece en alertas.
 - [ ] Doble clic o dos admins: solo cuenta la primera decisión (lo garantiza el servicio).

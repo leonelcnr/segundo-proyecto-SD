@@ -121,6 +121,21 @@ En **Control de acceso → Autorización → File** (el `acl.conf`), estas dos r
 - En **Autorización → Configuración**, "sin coincidencia" (`no_match`) tiene que estar en **deny**.
 - Se probó que con estas reglas `admin-1` no puede publicar en `usuario/admin-2/pedido`. Ese intento dispara la regla de seguridad del paso 6.
 
+## 5 y 6. Con el script (recomendado)
+
+Los pasos 5 y 6 están versionados en [`emqx/webhooks.hocon`](../emqx/webhooks.hocon). En el Server A, desde la raíz del repo:
+
+```bash
+RECEPTOR_URL=http://<server-del-dashboard>:3000 WEBHOOK_TOKEN=<token> emqx/configurar.sh emqx-lab
+```
+
+- Tiene que imprimir `load connectors / actions / rule_engine on cluster ok`, y `docker exec emqx-lab emqx ctl rules list` muestra `conexiones`, `seguridad` y `alarmas`.
+- Se puede correr las veces que haga falta: pisa lo anterior, no duplica. Si cambia la IP del receptor o el token, se vuelve a correr.
+- Lo cargado queda en el volumen `emqx_data`. Si el container se recrea **sin** ese volumen, EMQX arranca vacío y basta con volver a correr el script.
+- **Probado** el 06/11/2026 contra EMQX 6.3.2 recién creado: llegan las conexiones, la alerta por un `subscribe #` negado y por un admin que publica en el pedido de otro, y la alarma; un evento `acceso` no dispara la regla de alarmas. Con el receptor caído, EMQX guardó los avisos y los entregó cuando el receptor volvió.
+
+Si se prefiere el panel, los pasos 5 y 6 explican lo mismo a mano.
+
 ## 5. Conector HTTP al receptor
 
 **Integración → Conectores → Crear → HTTP Server**:
