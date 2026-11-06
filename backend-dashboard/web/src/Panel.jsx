@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { Marca } from "./Login.jsx";
+import { hora } from "./formato.js";
+import { SECCIONES, PantallaDispositivos, PantallaAlertas, PantallaActividad, PantallaSalas, PantallaArquitectura, itemsActividad } from "./Secciones.jsx";
 
-const hora = (fecha) => new Date(fecha).toLocaleTimeString("es-AR", { hour12: false });
+// La sección sale del hash (#salas), así el botón Atrás y los enlaces funcionan
+const seccionDelHash = () => {
+  const s = location.hash.slice(1);
+  return SECCIONES.some(([id]) => id === s) ? s : "panel";
+};
 
 const iniciales = (nombre = "") => nombre.split(/[ -]/).map((p) => p[0]).join("").slice(0, 2).toUpperCase();
 
@@ -23,6 +29,13 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
   const [estado, setEstado] = useState(VACIO);
   const [conectado, setConectado] = useState(false);
   const [ahora, setAhora] = useState(Date.now());
+  const [seccion, setSeccion] = useState(seccionDelHash);
+
+  useEffect(() => {
+    const cambio = () => setSeccion(seccionDelHash());
+    addEventListener("hashchange", cambio);
+    return () => removeEventListener("hashchange", cambio);
+  }, []);
 
   // Estado completo en vivo: el servidor lo manda al conectarse y cada vez que llega un aviso
   useEffect(() => {
@@ -52,17 +65,17 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
     estado.presencia.find((p) => p.nombre === "servicio") ??
     estado.dispositivos.find((d) => d.clientid === "servicio");
 
+  const [, , titulo, bajada] =SECCIONES.find(([id]) => id === seccion);
+
   return (
     <div className="app">
       <nav className="lateral" aria-label="Secciones">
         <Marca />
-        <a href="#pendientes" className="item activo">
-          Panel {pendientes.length > 0 && <span className="contador">{pendientes.length}</span>}
-        </a>
-        <a href="#dispositivos" className="item">Dispositivos</a>
-        <a href="#alertas" className="item">Alertas</a>
-        <a href="#actividad" className="item">Actividad</a>
-        <a href="#salas" className="item">Salas</a>
+        {SECCIONES.map(([id, nombre]) => (
+          <a key={id} href={`#${id}`} className={`item ${seccion === id ? "activo" : ""}`} aria-current={seccion === id ? "page" : undefined}>
+            {nombre} {id === "panel" && pendientes.length > 0 && <span className="contador">{pendientes.length}</span>}
+          </a>
+        ))}
         <div className="usuario">
           <div className="avatar chico" aria-hidden="true">{iniciales(usuario)}</div>
           <span>{usuario}</span>
@@ -73,8 +86,8 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
       <main className="contenido">
         <header className="encabezado">
           <div>
-            <h1>Panel del admin</h1>
-            <p className="tenue">Solicitudes de acceso que necesitan tu decisión, en vivo.</p>
+            <h1>{titulo}</h1>
+            <p className="tenue">{bajada}</p>
           </div>
           {!conectado ? (
             <span className="pildora mal">Reconectando con el servidor…</span>
@@ -87,6 +100,13 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
 
         {alarmas.map((a) => <Alarma key={a.sitio} alarma={a} alPerderSesion={alPerderSesion} />)}
 
+        {seccion === "dispositivos" && <PantallaDispositivos estado={estado} />}
+        {seccion === "alertas" && <PantallaAlertas estado={estado} />}
+        {seccion === "actividad" && <PantallaActividad estado={estado} />}
+        {seccion === "salas" && <PantallaSalas estado={estado} />}
+        {seccion === "arquitectura" && <PantallaArquitectura estado={estado} />}
+
+        {seccion === "panel" && <>
         <div className="fila-principal">
           <section id="pendientes" className="columna">
             <h2>
@@ -101,7 +121,7 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
           </section>
 
           <aside className="columna">
-            <h2>Estado del sistema</h2>
+            <h2>Estado del sistema <a href="#dispositivos" className="tenue chico ver-todo">Ver todo</a></h2>
             <div className="card estado">
               <Alertas alertas={estado.alertas} />
               <Dispositivos estado={estado} />
@@ -125,8 +145,7 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
           </section>
           <Actividad estado={estado} />
         </div>
-
-        <Salas estado={estado} />
+        </>}
       </main>
     </div>
   );
@@ -223,14 +242,14 @@ function Alertas({ alertas }) {
   const ultima = alertas[0];
   if (!ultima) {
     return (
-      <section id="alertas" className="tramo">
+      <section className="tramo">
         <h3>Alertas de seguridad</h3>
         <p className="tenue">Sin alertas.</p>
       </section>
     );
   }
   return (
-    <section id="alertas" className="tramo alerta">
+    <section className="tramo alerta">
       <h3>{alertas.length === 1 ? "1 alerta de seguridad" : `${alertas.length} alertas de seguridad`}</h3>
       <div>
         {ultima.clientid} intentó {ultima.action === "publish" ? "publicar" : "suscribirse"} en <b>{ultima.topic}</b>
@@ -250,7 +269,7 @@ function Dispositivos({ estado }) {
   const telemetria = (p) => estado.telemetria.find((t) => t.puerta === p.nombre && t.sitio === p.sitio);
 
   return (
-    <section id="dispositivos" className="tramo crece">
+    <section className="tramo crece">
       <h3>
         Puertas <span>{enLinea} de {puertas.length} en línea</span>
       </h3>
@@ -289,25 +308,14 @@ function Dispositivos({ estado }) {
   );
 }
 
-// Eventos del servicio + conexiones, alertas y avisos (no es el log crudo: ese está por confirmar)
+// Resumen: lo último de la actividad; la lista completa está en la sección Actividad
 function Actividad({ estado }) {
 
-  const items = [
-    ...estado.eventos.map((e) => ({ t: e.ts, texto: `${e.tipo}: ${e.persona ?? e.puerta ?? ""}${e.sala ? ` en ${e.sala}` : ""} ${e.detalle ? `(${e.detalle})` : ""}` })),
-    ...estado.dispositivos.map((d) => ({
-      t: d.desde,
-      texto: d.online ? `${d.clientid} se conectó` : `${d.clientid} se desconectó (${d.motivo ?? "sin motivo"})`,
-    })),
-    ...estado.alertas.map((a) => ({ t: a.timestamp ?? a.recibido, texto: `Alerta: ${a.clientid} bloqueado en ${a.topic}` })),
-    ...estado.avisos.map((a) => ({ t: a.recibido, texto: a.tipo === "ya_resuelta" ? `${a.req_id} ya la había resuelto ${a.por}` : a.tipo })),
-  ]
-    .filter((it) => it.t)
-    .sort((a, b) => new Date(b.t) - new Date(a.t))
-    .slice(0, 8);
+  const items = itemsActividad(estado).slice(0, 8);
 
   return (
-    <section id="actividad" className="card bloque gris">
-      <h2>Actividad reciente</h2>
+    <section className="card bloque gris">
+      <h2>Actividad reciente <a href="#actividad" className="tenue chico ver-todo">Ver todo</a></h2>
       {items.length === 0 && <p className="tenue">Sin actividad todavía.</p>}
       <ol className="actividad">
         {items.map((it, i) => (
@@ -316,57 +324,6 @@ function Actividad({ estado }) {
           </li>
         ))}
       </ol>
-    </section>
-  );
-}
-
-
-// shortcut: vista provisoria en lista; después va la vista isométrica (salas-iso) alimentada por el mismo /stream
-function Salas({ estado }) {
-
-  const servicio = estado.presencia.find((p) => p.nombre === "servicio-salas");
-  const caliente = (s) => estado.alertasAmbiente.find((a) => a.sitio === s.sitio && a.sala === s.sala);
-
-  return (
-    <section id="salas" className="card bloque">
-      <h2>
-        Salas{" "}
-        {servicio && <span className={`pildora ${servicio.online ? "bien" : "mal"}`}>Servicio de salas {servicio.online ? "conectado" : "desconectado"}</span>}
-      </h2>
-      {estado.salas.length === 0 && <p className="tenue">Todavía no llegó nada de las salas.</p>}
-      {estado.salas.map((s) => {
-        const e = s.estado ?? {};
-        const alerta = caliente(s);
-        const temp = s.temp?.valor ?? e.temp;
-        // El webhook queda en el log aunque la sala ya se haya enfriado: si hay estado, manda el estado
-        const alta = s.estado ? e.alarma : Boolean(alerta);
-        return (
-          <div key={`${s.sitio}/${s.sala}`} className="renglon">
-            <div>
-              <div className="medio">{s.sala} <span className="tenue chico">· {s.sitio}</span></div>
-              <div className="tenue chico">
-                {temp != null && `${temp} °C`}
-                {e.consigna != null && ` · consigna ${e.consigna} °C`}
-                {typeof e.luz === "boolean" ? ` · luz ${e.luz ? `${e.nivel ?? ""} %` : "apagada"}` : e.luz && ` · luz ${e.luz}`}
-                {e.cortina != null && ` · cortina ${e.cortina} %`}
-                {e.kw != null && ` · ${e.kw} kW`}
-              </div>
-              <div className="tenue chico">
-                {s.ocupantes.length === 0
-                  ? "Vacía"
-                  : `Dentro: ${s.ocupantes.map((o) => `${o.persona}${o.vence ? ` (hasta ${hora(o.vence)})` : ""}`).join(", ")}`}
-              </div>
-            </div>
-            {alta ? (
-              <span className="pildora mal">{alerta ? `Pasó los 27 °C a las ${hora(alerta.desde)}` : "Temperatura alta"}</span>
-            ) : e.falla_crac ? (
-              <span className="pildora mal">Falla del aire</span>
-            ) : (
-              <span className="pildora bien">Normal</span>
-            )}
-          </div>
-        );
-      })}
     </section>
   );
 }

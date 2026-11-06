@@ -152,3 +152,22 @@ a { color: inherit; }
   .solicitud { padding: 20px; }
   .acciones .boton { flex: 1; }
 }
+
+/* Secciones del menú */
+.pila { display: flex; flex-direction: column; gap: 24px; }
+.ver-todo { margin-left: auto; font-size: 13px; font-weight: 500; text-decoration: none; }
+.ver-todo:hover { color: var(--texto); }
+.tabla-scroll { overflow-x: auto; }
+.tabla { width: 100%; border-collapse: collapse; font-size: 14px; }
+.tabla th { text-align: left; font-size: 13px; font-weight: 500; color: var(--tenue); padding: 8px 12px 8px 0; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+.tabla td { padding: 10px 12px 10px 0; border-bottom: 1px solid var(--borde); white-space: nowrap; }
+.tabla tr:last-child td { border-bottom: none; }
+.tabla code { font-size: 13px; }
+.maqueta { overflow: hidden; }
+.maqueta-cabeza { display: flex; justify-content: space-between; align-items: center; gap: 12px; flex-wrap: wrap; padding: 18px 20px 0; }
+.maqueta iframe { display: block; width: 100%; border: 0; }
+.maqueta iframe.alto { height: calc(100vh - 200px); min-height: 560px; }
+.segmentado { display: inline-flex; padding: 3px; border-radius: 9999px; background: var(--gris); }
+.segmentado button { font: inherit; font-size: 13px; font-weight: 500; border: 0; border-radius: 9999px; padding: 4px 12px; background: transparent; color: var(--tenue); cursor: pointer; }
+.segmentado button[aria-pressed="true"] { background: #ffffff; color: var(--texto); box-shadow: var(--anillo); }
+.segmentado button:focus-visible { outline: 2px solid var(--lavanda); outline-offset: 2px; }

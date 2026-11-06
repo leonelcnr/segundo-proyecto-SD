@@ -6,6 +6,8 @@ const backend = "http://localhost:3000";
 
 export default defineConfig({
   plugins: [react()],
+  // Dos páginas: el panel y la maqueta de las salas, que el panel muestra en un iframe
+  build: { rollupOptions: { input: ["index.html", "salas.html"] } },
   server: {
     proxy: { "/login": backend, "/logout": backend, "/me": backend, "/stream": backend, "/api": backend },
   },

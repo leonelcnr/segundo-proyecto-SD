@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Control de acceso NFC sobre MQTT · arquitectura",
+    "locale": "es",
+    "output": "arquitectura.html",
+    "quality_profile": "showcase"
+  },
+  "components": [
+    { "id": "puertas", "type": "frontend", "label": "Puertas", "sublabel": "ESP32 + lector NFC", "tag": "puerta-*", "pos": [40, 150], "size": [150, 64] },
+    { "id": "celular", "type": "frontend", "label": "App del celular", "sublabel": "credencial + control de salas", "tag": "celular-*", "pos": [40, 400], "size": [170, 64] },
+    { "id": "emqx", "type": "messagebus", "label": "Broker EMQX", "sublabel": "TLS :8883 · ACL · reglas", "tag": "alumno07", "pos": [400, 270], "size": [170, 72] },
+    { "id": "mysql", "type": "database", "label": "MySQL", "sublabel": "usuarios MQTT :3307", "pos": [410, 500], "size": [150, 60] },
+    { "id": "servicio", "type": "backend", "label": "Servicio central", "sublabel": "decide permisos y abre puertas", "tag": "servicio", "pos": [720, 90], "size": [180, 64] },
+    { "id": "salas", "type": "backend", "label": "Servicio de salas", "sublabel": "gemelo digital: luz, cortina, aire", "tag": "servicio-salas", "pos": [720, 450], "size": [190, 64] },
+    { "id": "dashboard", "type": "backend", "label": "Dashboard", "sublabel": "Node + Express + React", "tag": "alumno06", "pos": [1010, 270], "size": [170, 72] },
+    { "id": "admin", "type": "external", "label": "Admin", "sublabel": "navegador vía sd-2026:18106", "pos": [1010, 500], "size": [170, 60] }
+  ],
+  "connections": [
+    { "id": "puertas-emqx", "from": "puertas", "to": "emqx", "label": "lectura ⇄ orden", "variant": "emphasis" },
+    { "id": "celular-emqx", "from": "celular", "to": "emqx", "label": "control ⇄ respuesta" },
+    { "id": "emqx-mysql", "from": "emqx", "to": "mysql", "label": "autentica", "variant": "security" },
+    { "id": "servicio-emqx", "from": "servicio", "to": "emqx", "label": "estado · eventos · ocupantes", "variant": "emphasis" },
+    { "id": "salas-emqx", "from": "salas", "to": "emqx", "label": "estado · telemetría" },
+    { "id": "emqx-dashboard", "from": "emqx", "to": "dashboard", "label": "MQTT TLS + JWT", "variant": "emphasis" },
+    { "id": "admin-dashboard", "from": "admin", "to": "dashboard", "label": "HTTP · SSE /stream" }
+  ],
+  "cards": [
+    { "dot": "violet", "title": "Webhooks al dashboard", "items": ["conexiones: webhook directo de cada conexión y desconexión", "seguridad: regla cuando la ACL niega algo", "alarmas: regla sobre acceso/+/eventos con tipo alarma", "ambiente: regla cuando servidores pasa los 27 °C", "Todos con header X-Token"] },
+    { "dot": "rose", "title": "Seguridad", "items": ["TLS con CA propia (CA Proyecto Puertas)", "Node se autentica con un JWT HS256 que firma él mismo", "Puertas, servicios y celulares: usuario y clave en MySQL", "ACL: todo lo no permitido se niega", "Panel: login del admin con cookie JWT"] },
+    { "dot": "cyan", "title": "Red del laboratorio", "items": ["sd-2026 es el único host en Tailscale", "Reenvía 181NN al puerto 18083 y 221NN al SSH de cada alumnoNN", "Broker en alumno07 (panel en :18107), dashboard en alumno06 (:18106)"] }
+  ]
+}
