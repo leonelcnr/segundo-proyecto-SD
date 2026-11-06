@@ -267,8 +267,6 @@ Vistas de la página:
 - [x] Webhook directo (connect y disconnect) y verificar que llega.
 - [x] Regla de alarmas (`acceso/+/eventos` con `tipo = 'alarma'`, reemplaza a la regla A con el protocolo del grupo) y probada publicando a mano.
 - [x] Regla de seguridad (authz deny) y probada publicando en un topic prohibido y con un `subscribe #`.
-- [x] Versionado en `emqx/webhooks.hocon` + `emqx/configurar.sh` (`emqx ctl conf load`). Probado contra un EMQX recién creado y corriéndolo dos veces.
-- [ ] Correr `configurar.sh` en el broker real (Server A) con la IP del receptor y el token real.
 
 ### Fase 3: dashboard (día 3-5)
 - [x] Login de admin.
