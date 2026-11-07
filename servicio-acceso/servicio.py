@@ -40,6 +40,15 @@ MAPEO_PUERTAS = {
     "puerta-servidores": "permiso_servidores",
 }
 
+# Puerta -> sala que protege (nombre de la sala en el topic de ocupantes)
+SALA_POR_PUERTA = {
+    "puerta-hall": "hall",
+    "puerta-servidores": "servidores",
+}
+# Cuánto tiempo se considera que alguien sigue dentro de cada sala (protocolo de salas, 3.1)
+PERMANENCIA_S = {"hall": 15 * 60, "servidores": 10 * 60}
+SITIO_INICIAL = os.getenv("SITIO", "edificio1")  # sitio al que se le limpian los ocupantes al arrancar
+
 # Cómo se muestra en el dashboard cada resultado guardado en la tabla historial
 TIPO_POR_RESULTADO = {
     "PERMITIDO": "acceso",
@@ -77,6 +86,7 @@ def sitio_estado(sitio):
             "pendientes": {},  # req_id -> {req_id, puerta, uid, persona, vence, timer}
             "alarma": {"activa": False},
             "historial": deque(cargar_historial(), maxlen=MAX_HISTORIAL),
+            "ocupantes": {sala: {} for sala in PERMANENCIA_S},  # sala -> {uid: {..., timer}}
         }
     return SITIOS[sitio]
 
@@ -127,6 +137,13 @@ def buscar_usuario(uid, puerta):
     return (fila[0], fila[1] == 1, fila[2] == 1 or fila[3] == 1) if fila else None
 
 
+def buscar_rol(uid):
+    con = sqlite3.connect(DB)
+    fila = con.execute("SELECT rol FROM usuarios WHERE uid_nfc = ?", (uid,)).fetchone()
+    con.close()
+    return fila[0] if fila else None
+
+
 def guardar_historial(puerta, uid, resultado):
     con = sqlite3.connect(DB)
     con.execute("INSERT INTO historial (puerta, uid_nfc, resultado) VALUES (?, ?, ?)", (puerta, uid, resultado))
@@ -158,6 +175,45 @@ def publicar_evento(client, sitio, tipo, puerta=None, persona=None, uid=None, de
     evento = {"ts": ahora(), "tipo": tipo, "puerta": puerta, "persona": persona, "uid": uid, "detalle": detalle}
     sitio_estado(sitio)["historial"].append(evento)
     client.publish(f"acceso/{sitio}/eventos", json.dumps(evento), qos=1)
+
+
+def publicar_ocupantes(client, sitio, sala):
+    """Lista completa de quién está dentro de la sala, retenida. [] = sala vacía."""
+    lista = [
+        {k: v for k, v in o.items() if k != "timer"}
+        for o in sitio_estado(sitio)["ocupantes"][sala].values()
+    ]
+    client.publish(f"acceso/{sitio}/sala/{sala}/ocupantes", json.dumps(lista), qos=1, retain=True)
+
+
+def registrar_ocupante(client, sitio, puerta, uid, nombre):
+    """Anota que la persona entró a la sala de esa puerta y publica la lista completa."""
+    sala = SALA_POR_PUERTA.get(puerta)
+    if sala is None:
+        return
+    dentro = sitio_estado(sitio)["ocupantes"][sala]
+    if uid in dentro:  # volvió a pasar la tarjeta: se renueva su permanencia
+        dentro[uid]["timer"].cancel()
+    segundos = PERMANENCIA_S[sala]
+    timer = threading.Timer(segundos, vencer_ocupante, args=(client, sitio, sala, uid))
+    timer.daemon = True
+    dentro[uid] = {
+        "persona": nombre,
+        "usuario": None,  # no tenemos de dónde sacar el celular de la persona
+        "rol": buscar_rol(uid),
+        "desde": ahora(),
+        "vence": datetime.fromtimestamp(datetime.now().timestamp() + segundos).isoformat(timespec="seconds"),
+        "timer": timer,
+    }
+    timer.start()
+    publicar_ocupantes(client, sitio, sala)
+
+
+def vencer_ocupante(client, sitio, sala, uid):
+    with lock:
+        if sitio_estado(sitio)["ocupantes"][sala].pop(uid, None) is not None:
+            publicar_ocupantes(client, sitio, sala)
+            print(f" '{uid}' salió de '{sala}' (venció su permanencia)")
 
 
 def responder_puerta(client, sitio, puerta, req_id, accion, mensaje, final=True, por=None):
@@ -210,6 +266,7 @@ def procesar_lectura(client, sitio, puerta, datos):
         guardar_historial(puerta, uid, "PERMITIDO")
         responder_puerta(client, sitio, puerta, req_id, "abrir", f"Hola {primer_nombre(nombre)}")
         marcar_acceso(sitio, puerta)
+        registrar_ocupante(client, sitio, puerta, uid, nombre)
         publicar_evento(client, sitio, "acceso", puerta, nombre, uid, "directo")
 
     elif not usuario[2]:
@@ -250,6 +307,7 @@ def cerrar_solicitud(client, sitio, req_id, aprobada, resultado, detalle, por=No
                      por=por or "el servicio")
     if aprobada:
         marcar_acceso(sitio, sol["puerta"])
+        registrar_ocupante(client, sitio, sol["puerta"], sol["uid"], sol["persona"])
     publicar_evento(client, sitio, "acceso" if aprobada else "denegado",
                     sol["puerta"], sol["persona"], sol["uid"], detalle)
     publicar_estado(client, sitio)
@@ -303,6 +361,11 @@ def on_connect(client, userdata, flags, reason_code, properties):
         return
     print(" Conectado al broker MQTT.")
     client.publish("servicio/presencia", "online", qos=1, retain=True)
+    # Tras un reinicio no se sabe quién sigue dentro: se limpia lo que haya quedado retenido
+    with lock:
+        for sala in PERMANENCIA_S:
+            if not sitio_estado(SITIO_INICIAL)["ocupantes"][sala]:
+                publicar_ocupantes(client, SITIO_INICIAL, sala)
     # Se suscribe en cada conexión: si el broker se reinicia, no se pierden las suscripciones
     client.subscribe([
         ("acceso/+/puerta/+/lectura", 1),
