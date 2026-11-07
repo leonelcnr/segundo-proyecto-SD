@@ -145,4 +145,4 @@ body[data-theme="light"] .iso-page{margin-top:40px}
 @keyframes sl-in{from{opacity:0;transform:translateY(-4px)}}
 @media (max-width:880px){.sl-bus li{grid-template-columns:14px 1fr}.sl-bus li .d{grid-column:2}}
 @media (max-width:520px){.iso-plate-corner[data-corner="hint"]{display:none}.iso-plate-corner[data-corner="readout"]{font-size:9.5px;letter-spacing:.04em}}
-.vivo .iso-page{width:min(780px,100% - 32px);margin:12px auto}.vivo .sl-body{grid-template-columns:1fr}.vivo .sl-side,.vivo .sl-demo,.vivo .iso-legend{display:none}
+body.vivo{background:#fff}.vivo .iso-page{width:min(900px,100%);margin:0 auto}.vivo .iso-figure{margin:0}.vivo .iso-plate{box-shadow:none;background:#fff;--anatomy-card:#fff;--anatomy-paper:#fff;padding:0 0 28px}.vivo .iso-plate-corner[data-corner="fig"],.vivo .iso-plate-corner[data-corner="title"],.vivo .sl-bus{display:none}.vivo .iso-plate-corners{inset:auto 8px 6px}.vivo .iso-plate-corner[data-corner="hint"]{bottom:0}.vivo .sl-body{padding:0}.vivo .sl-body{grid-template-columns:1fr}.vivo .sl-side,.vivo .sl-demo,.vivo .iso-legend{display:none}

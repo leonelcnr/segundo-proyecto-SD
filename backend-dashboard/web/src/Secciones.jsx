@@ -237,19 +237,14 @@ export function PantallaSalas({ estado }) {
 
   return (
     <div className="pila">
-      <section className="card maqueta">
-        <div className="maqueta-cabeza">
-          <h2>
-            Maqueta{" "}
-            {servicio && <span className={`pildora ${servicio.online ? "bien" : "mal"}`}>Servicio de salas {servicio.online ? "conectado" : "desconectado"}</span>}
-          </h2>
-          <div className="segmentado" role="group" aria-label="Origen de los datos">
-            <button type="button" aria-pressed={vivo} onClick={() => setVivo(true)}>En vivo</button>
-            <button type="button" aria-pressed={!vivo} onClick={() => setVivo(false)}>Demo</button>
-          </div>
+      <div className="maqueta-cabeza">
+        {servicio && <span className={`pildora ${servicio.online ? "bien" : "mal"}`}>Servicio de salas {servicio.online ? "conectado" : "desconectado"}</span>}
+        <div className="segmentado" role="group" aria-label="Origen de los datos">
+          <button type="button" aria-pressed={vivo} onClick={() => setVivo(true)}>En vivo</button>
+          <button type="button" aria-pressed={!vivo} onClick={() => setVivo(false)}>Demo</button>
         </div>
-        <iframe ref={marco} key={vivo} src={vivo ? "/salas.html?vivo" : "/salas.html"} title="Maqueta isométrica de las salas" style={{ height: alto }} />
-      </section>
+      </div>
+      <iframe className="maqueta" ref={marco} key={vivo} src={vivo ? "/salas.html?vivo" : "/salas.html"} title="Maqueta isométrica de las salas" style={{ height: alto }} />
       <ListaSalas estado={estado} />
     </div>
   );
@@ -303,11 +298,32 @@ function ListaSalas({ estado }) {
 }
 
 
+const VISTAS = [["mapa", "Mapa"], ["topics", "Topics"], ["conceptos", "Conceptos"]];
+
+
 export function PantallaArquitectura() {
 
+  const [vista, setVista] = useState("mapa");
+  const [alto, setAlto] = useState(700);
+  const marco = useRef(null);
+
+  // La página del mapa avisa su alto, así el iframe no tiene scroll propio
+  useEffect(() => {
+    const medir = (e) => {
+      if (e.origin === location.origin && e.source === marco.current?.contentWindow && e.data?.alto) setAlto(e.data.alto);
+    };
+    addEventListener("message", medir);
+    return () => removeEventListener("message", medir);
+  }, []);
+
   return (
-    <section className="card maqueta">
-      <iframe src="/arquitectura.html" title="Diagrama de la arquitectura del sistema" className="alto" />
-    </section>
+    <div className="pila">
+      <div className="maqueta-cabeza">
+        <div className="segmentado" role="group" aria-label="Vista">
+          {VISTAS.map(([id, nombre]) => <button key={id} type="button" aria-pressed={vista === id} onClick={() => setVista(id)}>{nombre}</button>)}
+        </div>
+      </div>
+      <iframe className="maqueta" ref={marco} src={`/arquitectura.html?embed=${vista}`} title="Diagrama de la arquitectura del sistema" style={{ height: alto }} />
+    </div>
   );
 }
