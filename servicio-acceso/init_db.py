@@ -32,6 +32,11 @@ usuarios_prueba = [
     ("A1B2C3D4", "Carlos Pérez (Empleado)", "empleado", 1, 0),
     ("F9E8D7C6", "Ana Gómez (Admin)", "admin", 1, 1),
     ("11223344", "Juan López (Inactivo)", "visitante", 0, 0),
+    # Tarjetas reales del grupo
+    ("31A7506E", "Alan Viera", "admin", 1, 1),
+    ("BD6173E7", "Nehuen García", "admin", 1, 1),
+    ("3C2F69E7", "Francisco Cavieres", "empleado", 1, 0),
+    ("8D3F2AF4", "Leonel Canario", "empleado", 1, 0),
 ]
 
 cursor.executemany(
