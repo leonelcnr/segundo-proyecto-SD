@@ -125,7 +125,7 @@ Es lo que muestra el dashboard como "lo que hacen los usuarios dentro de cada sa
 {allow, {username, "servicio-salas"}, publish, ["sala/+/+/estado", "sala/+/+/telemetria", "sala/+/+/eventos", "servicio-salas/presencia", "usuario/+/respuesta"]}.
 
 %% Servicio central: además de lo que ya tiene, publica quién está dentro
-{allow, {username, "servicio"}, publish, ["acceso/+/sala/+/ocupantes"]}.
+{allow, {username, "servicio-central"}, publish, ["acceso/+/sala/+/ocupantes"]}.
 
 %% Admins (dashboard): leen las salas
 {allow, {username, {re, "^admin-"}}, subscribe, ["acceso/+/sala/+/ocupantes", "sala/+/+/estado", "sala/+/+/telemetria", "sala/+/+/eventos", "servicio-salas/presencia"]}.
