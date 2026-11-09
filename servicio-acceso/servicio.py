@@ -29,7 +29,7 @@ import paho.mqtt.client as mqtt
 # --- Configuración (variables de entorno) ---
 BROKER = os.getenv("BROKER_HOST", "localhost")
 PUERTO = int(os.getenv("BROKER_PORT", 1883))
-USUARIO = os.getenv("MQTT_USER", "servicio")  # tiene que coincidir con el client ID: lo exige la ACL
+USUARIO = os.getenv("MQTT_USER", "servicio-central")  # tiene que coincidir con el client ID: lo exige la ACL
 CLAVE = os.getenv("MQTT_PASSWORD")
 CA = os.getenv("MQTT_CA")  # ruta a ca.crt; si está, la conexión va por TLS
 DB = os.getenv("DB_PATH", "datos.db")

@@ -1,1 +1,5 @@
 .env
+
+# Base de datos del servicio (se crea con init_db.py; tiene nombres y UIDs reales)
+datos.db
+datos.db.bak
