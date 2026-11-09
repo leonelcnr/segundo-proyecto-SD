@@ -6,12 +6,14 @@ que publica el estado del sistema (lo que muestra el dashboard).
 Topics:
   escucha   acceso/+/puerta/+/lectura       (puerta: {req_id, uid})
             acceso/+/puerta/+/presencia     (puerta: online/offline, Last Will)
-            usuario/+/pedido                (admin: decision / reconocer_alarma)
+            usuario/+/pedido                (admin: decision / reconocer_alarma; celular: no_fui_yo / salir)
   publica   acceso/{sitio}/puerta/{p}/orden (abrir / denegar)       QoS 1
             acceso/{sitio}/estado           (foto completa)         QoS 1, retenido
             acceso/{sitio}/alarma           (alarma del sitio)      QoS 1, retenido
             acceso/{sitio}/eventos          (hechos en vivo)        QoS 1
+            acceso/{sitio}/sala/{s}/ocupantes (quién está dentro)   QoS 1, retenido
             usuario/{admin}/aviso           (respuesta al admin)    QoS 1
+            usuario/{celular}/aviso         (uso de una credencial) QoS 1
             servicio/presencia              (online/offline, LWT)   QoS 1, retenido
 """
 import json
@@ -47,6 +49,14 @@ SALA_POR_PUERTA = {
 }
 # Cuánto tiempo se considera que alguien sigue dentro de cada sala (protocolo de salas, 3.1)
 PERMANENCIA_S = {"hall": 15 * 60, "servidores": 10 * 60}
+# Las salas están una dentro de la otra: entrar a servidores te deja también en el hall,
+# y salir del hall te saca también de servidores.
+SALA_DE_AFUERA = {"servidores": "hall"}
+SALE_TAMBIEN = {"hall": ["servidores"]}
+PUERTA_POR_SALA = {sala: puerta for puerta, sala in SALA_POR_PUERTA.items()}
+# Volver a pasar la credencial estando dentro es salir, pero sólo pasado este tiempo desde que entró:
+# antes se toma como una lectura repetida (tarjeta apoyada, doble pasada) y se ignora.
+MIN_SALIDA_S = int(os.getenv("MIN_SALIDA_S", 30))
 SITIO_INICIAL = os.getenv("SITIO", "edificio1")  # sitio al que se le limpian los ocupantes al arrancar
 
 # Cómo se muestra en el dashboard cada resultado guardado en la tabla historial
@@ -57,11 +67,13 @@ TIPO_POR_RESULTADO = {
     "RECHAZADO": "denegado",
     "VENCIDO": "denegado",
     "DESCONOCIDO": "alarma",
+    "SALIDA": "salida",
 }
 
 lock = threading.RLock()  # paho y los Timer corren en hilos distintos
 SITIOS = {}  # sitio -> estado en memoria
 YA_RESPONDIDAS = OrderedDict()  # req_id -> orden ya enviada, para repetirla si el mensaje llega duplicado
+AVISADOS = OrderedDict()  # req_id -> (sitio, puerta, uid, celular, nombre): para validar los "no fui yo"
 
 
 def ahora():
@@ -144,6 +156,25 @@ def buscar_rol(uid):
     return fila[0] if fila else None
 
 
+def buscar_celular(uid):
+    """Usuario MQTT del celular del dueño de la credencial (celular-1…), o None si no tiene."""
+    con = sqlite3.connect(DB)
+    fila = con.execute("SELECT celular FROM usuarios WHERE uid_nfc = ?", (uid,)).fetchone()
+    con.close()
+    return fila[0] if fila and fila[0] else None
+
+
+def migrar_db():
+    """Agrega la columna celular si la base es de antes (no borra nada)."""
+    con = sqlite3.connect(DB)
+    columnas = [c[1] for c in con.execute("PRAGMA table_info(usuarios)")]
+    if "celular" not in columnas:
+        con.execute("ALTER TABLE usuarios ADD COLUMN celular TEXT")
+        con.commit()
+        print(" Base migrada: columna 'celular' agregada a usuarios")
+    con.close()
+
+
 def guardar_historial(puerta, uid, resultado):
     con = sqlite3.connect(DB)
     con.execute("INSERT INTO historial (puerta, uid_nfc, resultado) VALUES (?, ?, ?)", (puerta, uid, resultado))
@@ -177,43 +208,100 @@ def publicar_evento(client, sitio, tipo, puerta=None, persona=None, uid=None, de
     client.publish(f"acceso/{sitio}/eventos", json.dumps(evento), qos=1)
 
 
+def avisar_celular(client, sitio, puerta, req_id, uid, resultado, nombre=None, dentro=None, salas=None):
+    """Le cuenta al celular del dueño que se usó una de sus credenciales (app Android).
+    resultado: acceso | denegado | solicitud | salida. Si la persona no tiene celular, no hace nada."""
+    celular = buscar_celular(uid)
+    if not celular:
+        return
+    aviso = {"tipo": "uso_credencial", "req_id": req_id, "puerta": puerta, "uid": uid,
+             "resultado": resultado, "ts": ahora(), "rol": buscar_rol(uid)}
+    if dentro:
+        aviso["hasta"] = dentro.get(SALA_POR_PUERTA.get(puerta))  # la sala de esta puerta
+        aviso["dentro"] = dentro  # todas: entrar a servidores también te deja en el hall
+    if salas:
+        aviso["salas"] = salas  # salida: de qué salas salió
+    client.publish(f"usuario/{celular}/aviso", json.dumps(aviso), qos=1)
+    AVISADOS[req_id] = (sitio, puerta, uid, celular, nombre)
+    while len(AVISADOS) > 500:
+        AVISADOS.popitem(last=False)
+
+
 def publicar_ocupantes(client, sitio, sala):
     """Lista completa de quién está dentro de la sala, retenida. [] = sala vacía."""
     lista = [
-        {k: v for k, v in o.items() if k != "timer"}
+        {k: v for k, v in o.items() if k != "timer" and not k.startswith("_")}
         for o in sitio_estado(sitio)["ocupantes"][sala].values()
     ]
     client.publish(f"acceso/{sitio}/sala/{sala}/ocupantes", json.dumps(lista), qos=1, retain=True)
 
 
-def registrar_ocupante(client, sitio, puerta, uid, nombre):
-    """Anota que la persona entró a la sala de esa puerta y publica la lista completa."""
-    sala = SALA_POR_PUERTA.get(puerta)
-    if sala is None:
-        return
+def clave_persona(uid):
+    """Identidad de la persona en las salas: su celular si tiene (tarjeta y celular = una sola persona), si no la tarjeta."""
+    return buscar_celular(uid) or uid
+
+
+def anotar_en_sala(client, sitio, sala, clave, uid, nombre):
+    """Anota (o renueva) a la persona en una sala, con su vencimiento. Devuelve el 'hasta' (ISO, hora local)."""
     dentro = sitio_estado(sitio)["ocupantes"][sala]
-    if uid in dentro:  # volvió a pasar la tarjeta: se renueva su permanencia
-        dentro[uid]["timer"].cancel()
+    previo = dentro.get(clave)
+    if previo:
+        previo["timer"].cancel()
     segundos = PERMANENCIA_S[sala]
-    timer = threading.Timer(segundos, vencer_ocupante, args=(client, sitio, sala, uid))
-    timer.daemon = True
-    dentro[uid] = {
+    ahora_ts = datetime.now().timestamp()
+    hasta = datetime.fromtimestamp(ahora_ts + segundos).isoformat(timespec="seconds")
+    entrada = {
         "persona": nombre,
-        "usuario": None,  # no tenemos de dónde sacar el celular de la persona
+        "uid": uid,
+        "usuario": buscar_celular(uid),  # el servicio de salas identifica a la persona por su celular
         "rol": buscar_rol(uid),
-        "desde": ahora(),
-        "vence": datetime.fromtimestamp(datetime.now().timestamp() + segundos).isoformat(timespec="seconds"),
-        "timer": timer,
+        "desde": previo["desde"] if previo else ahora(),
+        "hasta": hasta,
+        "vence": hasta,  # mismo valor, por compatibilidad con lo que ya lo leía así
+        "_entro": previo["_entro"] if previo else ahora_ts,  # para no tomar una lectura repetida como salida
     }
+    timer = threading.Timer(segundos, vencer_ocupante, args=(client, sitio, sala, clave, entrada))
+    timer.daemon = True
+    entrada["timer"] = timer
+    dentro[clave] = entrada
     timer.start()
     publicar_ocupantes(client, sitio, sala)
+    return hasta
 
 
-def vencer_ocupante(client, sitio, sala, uid):
+def registrar_ocupante(client, sitio, puerta, uid, nombre):
+    """Anota que la persona entró a la sala de esa puerta (y a la de afuera, si la hay).
+    Devuelve {sala: hasta} con las salas donde quedó, o {} si la puerta no protege una sala."""
+    sala = SALA_POR_PUERTA.get(puerta)
+    if sala is None:
+        return {}
+    clave = clave_persona(uid)
+    dentro = {sala: anotar_en_sala(client, sitio, sala, clave, uid, nombre)}
+    afuera = SALA_DE_AFUERA.get(sala)
+    if afuera:  # para llegar a servidores hay que estar en el hall
+        dentro[afuera] = anotar_en_sala(client, sitio, afuera, clave, uid, nombre)
+    return dentro
+
+
+def salir(client, sitio, sala, clave):
+    """Saca a la persona de la sala (y de las que están adentro de ella). Devuelve de cuáles salió."""
+    salidas = []
+    for s in [sala] + SALE_TAMBIEN.get(sala, []):
+        entrada = sitio_estado(sitio)["ocupantes"][s].pop(clave, None)
+        if entrada is not None:
+            entrada["timer"].cancel()
+            publicar_ocupantes(client, sitio, s)
+            salidas.append(s)
+    return salidas
+
+
+def vencer_ocupante(client, sitio, sala, clave, entrada):
     with lock:
-        if sitio_estado(sitio)["ocupantes"][sala].pop(uid, None) is not None:
+        dentro = sitio_estado(sitio)["ocupantes"][sala]
+        if dentro.get(clave) is entrada:  # si salió y volvió a entrar, este timer ya no vale
+            del dentro[clave]
             publicar_ocupantes(client, sitio, sala)
-            print(f" '{uid}' salió de '{sala}' (venció su permanencia)")
+            print(f" '{clave}' salió de '{sala}' (venció su permanencia)")
 
 
 def responder_puerta(client, sitio, puerta, req_id, accion, mensaje, final=True, por=None):
@@ -253,6 +341,10 @@ def procesar_lectura(client, sitio, puerta, datos):
 
     usuario = buscar_usuario(uid, puerta)
 
+    if usuario is not None and procesar_salida_por_puerta(client, sitio, puerta, req_id, uid, usuario[0]):
+        publicar_estado(client, sitio)
+        return
+
     if usuario is None:
         # Tarjeta desconocida: se deniega y se levanta la alarma del sitio
         guardar_historial(puerta, uid, "DESCONOCIDO")
@@ -266,8 +358,9 @@ def procesar_lectura(client, sitio, puerta, datos):
         guardar_historial(puerta, uid, "PERMITIDO")
         responder_puerta(client, sitio, puerta, req_id, "abrir", f"Hola {primer_nombre(nombre)}")
         marcar_acceso(sitio, puerta)
-        registrar_ocupante(client, sitio, puerta, uid, nombre)
+        dentro = registrar_ocupante(client, sitio, puerta, uid, nombre)
         publicar_evento(client, sitio, "acceso", puerta, nombre, uid, "directo")
+        avisar_celular(client, sitio, puerta, req_id, uid, "acceso", nombre, dentro)
 
     elif not usuario[2]:
         # Credencial sin permiso en ninguna puerta: se deniega sin molestar al admin
@@ -275,6 +368,7 @@ def procesar_lectura(client, sitio, puerta, datos):
         guardar_historial(puerta, uid, "DENEGADO")
         responder_puerta(client, sitio, puerta, req_id, "denegar", "No autorizado")
         publicar_evento(client, sitio, "denegado", puerta, nombre, uid, "nivel insuficiente")
+        avisar_celular(client, sitio, puerta, req_id, uid, "denegado", nombre)
 
     else:
         # Usuario conocido sin permiso para esa puerta: decide el admin, con tiempo límite.
@@ -289,9 +383,56 @@ def procesar_lectura(client, sitio, puerta, datos):
         timer.start()
         responder_puerta(client, sitio, puerta, req_id, "esperar", "", final=False)
         publicar_evento(client, sitio, "solicitud", puerta, nombre, uid, f"vence en {VENCE_S} s")
+        avisar_celular(client, sitio, puerta, req_id, uid, "solicitud", nombre)
 
     publicar_estado(client, sitio)
     print(f" Lectura {req_id} uid '{uid}' en '{puerta}' procesada")
+
+
+def procesar_salida_por_puerta(client, sitio, puerta, req_id, uid, nombre):
+    """Si la persona ya está en la sala de esa puerta, volver a pasar la credencial es salir.
+    No pide permiso ni admin: salir siempre se puede. Devuelve True si la lectura quedó resuelta acá."""
+    sala = SALA_POR_PUERTA.get(puerta)
+    clave = clave_persona(uid)
+    entrada = sitio_estado(sitio)["ocupantes"].get(sala, {}).get(clave)
+    if entrada is None:
+        return False
+    pasaron = datetime.now().timestamp() - entrada["_entro"]
+    if pasaron < MIN_SALIDA_S:
+        # Lectura repetida (tarjeta apoyada o doble pasada): no se entra de nuevo ni se sale
+        responder_puerta(client, sitio, puerta, req_id, "denegar", "Ya ingresaste")
+        print(f" Lectura {req_id} de '{uid}' ignorada: entró a '{sala}' hace {pasaron:.0f} s (< {MIN_SALIDA_S} s)")
+        return True
+    salidas = salir(client, sitio, sala, clave)
+    guardar_historial(puerta, uid, "SALIDA")
+    responder_puerta(client, sitio, puerta, req_id, "abrir", f"Chau {primer_nombre(nombre)}")
+    publicar_evento(client, sitio, "salida", puerta, nombre, uid, "por la puerta: " + ", ".join(salidas))
+    avisar_celular(client, sitio, puerta, req_id, uid, "salida", nombre, salas=salidas)
+    print(f" '{clave}' salió por '{puerta}' de: {', '.join(salidas)}")
+    return True
+
+
+def salir_desde_app(client, celular, datos):
+    """Pedido {"tipo": "salir", "sala": "hall"|"servidores", "req_id"} del celular: deja la sala sin pasar por la puerta."""
+    sala, req_id = datos.get("sala"), datos.get("req_id")
+    if sala not in PERMANENCIA_S:
+        return
+    salidas = []
+    for sitio in list(SITIOS):
+        entrada = SITIOS[sitio]["ocupantes"][sala].get(celular)
+        if entrada is None:
+            continue
+        salidas = salir(client, sitio, sala, celular)
+        puerta = PUERTA_POR_SALA[sala]
+        guardar_historial(puerta, entrada["uid"], "SALIDA")
+        publicar_evento(client, sitio, "salida", puerta, entrada["persona"], entrada["uid"],
+                        f"desde la app ({celular}): " + ", ".join(salidas))
+        publicar_estado(client, sitio)
+    # Se confirma igual aunque ya no estuviera dentro (venció o se reinició el servicio): la app bloquea esas salas
+    confirmadas = salidas or [sala] + SALE_TAMBIEN.get(sala, [])
+    client.publish(f"usuario/{celular}/aviso",
+                   json.dumps({"tipo": "salida", "req_id": req_id, "salas": confirmadas, "ts": ahora()}), qos=1)
+    print(f" '{celular}' salió desde la app de: {', '.join(salidas) or '(ya no estaba dentro)'}")
 
 
 def cerrar_solicitud(client, sitio, req_id, aprobada, resultado, detalle, por=None):
@@ -305,11 +446,14 @@ def cerrar_solicitud(client, sitio, req_id, aprobada, resultado, detalle, por=No
     responder_puerta(client, sitio, sol["puerta"], req_id, "abrir" if aprobada else "denegar",
                      f"Hola {primer_nombre(sol['persona'])}" if aprobada else ("Rechazado" if por else "Sin resp. admin"),
                      por=por or "el servicio")
+    dentro = None
     if aprobada:
         marcar_acceso(sitio, sol["puerta"])
-        registrar_ocupante(client, sitio, sol["puerta"], sol["uid"], sol["persona"])
+        dentro = registrar_ocupante(client, sitio, sol["puerta"], sol["uid"], sol["persona"])
     publicar_evento(client, sitio, "acceso" if aprobada else "denegado",
                     sol["puerta"], sol["persona"], sol["uid"], detalle)
+    avisar_celular(client, sitio, sol["puerta"], req_id, sol["uid"],
+                   "acceso" if aprobada else "denegado", sol["persona"], dentro)
     publicar_estado(client, sitio)
     return True
 
@@ -320,8 +464,31 @@ def vencer_solicitud(client, sitio, req_id):
             print(f" Solicitud {req_id} venció")
 
 
+def procesar_reporte_celular(client, celular, datos):
+    """El dueño avisa desde la app que él no usó su credencial: se publica un evento para el dashboard."""
+    if datos.get("tipo") != "no_fui_yo":
+        return
+    req_id = datos.get("req_id")
+    avisado = AVISADOS.get(req_id) if isinstance(req_id, str) else None
+    if avisado is None or avisado[3] != celular:
+        # No le avisamos de ese req_id a este celular (o el servicio se reinició): no se le cree
+        print(f" Reporte de '{celular}' ignorado: req_id {req_id!r} no es de una credencial suya")
+        return
+    sitio, puerta, uid, _, nombre = avisado
+    mensaje = str(datos.get("mensaje") or "No fui yo")[:200]
+    publicar_evento(client, sitio, "uso_indebido", puerta, nombre, uid, f"{celular}: {mensaje}")
+    publicar_estado(client, sitio)
+    print(f" !! REPORTE de '{celular}': alguien usó {uid} en '{puerta}' ({req_id}): {mensaje}")
+
+
 def procesar_pedido(client, admin, datos):
     tipo = datos.get("tipo")
+    if admin.startswith("celular-"):
+        if tipo == "salir":
+            salir_desde_app(client, admin, datos)
+        else:
+            procesar_reporte_celular(client, admin, datos)
+        return
     if not admin.startswith("admin-"):  # defensa en profundidad: la ACL ya lo impide
         return
 
@@ -400,6 +567,7 @@ def on_message(client, userdata, msg):
 
 
 def main():
+    migrar_db()
     cliente = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=USUARIO, clean_session=False)
     if CLAVE:
         cliente.username_pw_set(USUARIO, CLAVE)
