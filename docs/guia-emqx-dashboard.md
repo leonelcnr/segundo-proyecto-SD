@@ -11,7 +11,7 @@
 |---|---|---|
 | 1 | Certificado firmado por la CA del grupo, **con el nombre de Tailscale del server** | Que el dashboard pueda verificar el broker |
 | 2 | Listener TLS (8883) con ese certificado y sin 1883 hacia afuera | MQTT cifrado |
-| 3 | Autenticación: JWT para el dashboard, usuario y clave para el resto | Nadie entra sin identificarse |
+| 3 | Autenticación: JWT para el dashboard, MySQL (usuario y clave) para el resto | Nadie entra sin identificarse |
 | 4 | ACL del admin | `admin-1` solo publica su pedido y lee lo que muestra el panel |
 | 5 | Conector HTTP al receptor, con el header `X-Token` | Que los webhooks lleguen y el receptor los acepte |
 | 6 | Webhook directo y dos reglas | Conexiones, bloqueos de la ACL y alarmas |
@@ -82,7 +82,7 @@ En `compose-servidor-emqx.yaml`, servicio `emqx`:
 
 ## 3. Autenticación: JWT para el dashboard, usuario y clave para el resto
 
-Se crean **dos autenticadores**, y el orden importa: EMQX los prueba de arriba hacia abajo. Si la clave no es un JWT, el primero la ignora y pasa al segundo.
+Hay **dos autenticadores**, y el orden importa: EMQX los prueba de arriba hacia abajo. Si la clave no es un JWT, el primero la ignora y pasa al segundo.
 
 **3.1 JWT (primero).** **Control de acceso → Autenticación → Crear**:
 
@@ -102,10 +102,18 @@ Se crean **dos autenticadores**, y el orden importa: EMQX los prueba de arriba h
 
 **3.2 Usuario y clave (segundo).** **Crear** otra vez:
 - Mecanismo: **Password-Based**
-- Backend: **Built-in Database**
-- Tipo de ID: `username`; hash: `sha256`, salt `suffix`.
+- Backend: **MySQL** (la base del compose, tabla `mqtt_user`)
+- Hash: `sha256`, salt `suffix`.
+- SQL:
 
-En **Usuarios** de este autenticador van las puertas, el servicio y, si hace falta, un `admin-2` para probar a mano.
+```sql
+SELECT password_hash, salt FROM mqtt_user WHERE username = ${username} AND username = ${clientid} LIMIT 1
+```
+
+- La segunda condición ata el client ID al usuario: si alguien se conecta con otro client ID, no hay fila y EMQX lo rechaza.
+- Este autenticador **no** aplica a `admin-1` (entra por JWT, 3.1): en el JWT solo se verifica el claim `username`.
+
+En la tabla `mqtt_user` van las puertas, el servicio (`servicio-central`), `servicio-salas`, los celulares y, si hace falta, un `admin-2` para probar a mano.
 
 **Probado** contra EMQX 6.3.2 con los dos autenticadores en ese orden:
 
@@ -121,9 +129,9 @@ En **Usuarios** de este autenticador van las puertas, el servicio y, si hace fal
 
 > El dashboard se conecta con **client ID = `admin-1`** y sesión persistente. Si otro cliente se conecta con el mismo client ID, EMQX echa al primero (*session takeover*). No usar `admin-1` para probar desde otra herramienta mientras el dashboard está conectado: crear `admin-2` para eso.
 
-## 4. ACL del admin
+## 4. ACL
 
-En **Control de acceso → Autorización → File** (el `acl.conf`), estas dos reglas tienen que estar **antes** de `{deny, all}.`:
+La ACL completa y vigente está en [`acl.conf`](acl.conf) (servicio central, puertas, servicio de salas, admins y celulares). Se carga en **Control de acceso → Autorización → File**, con "sin coincidencia" (`no_match`) en **deny** y `{deny, all}.` al final. Abajo, las reglas del admin como ejemplo:
 
 ```erlang
 %% Admins (dashboard): publican solo en su pedido y leen lo que muestra el panel
