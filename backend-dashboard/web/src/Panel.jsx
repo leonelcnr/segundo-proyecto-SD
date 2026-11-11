@@ -63,7 +63,7 @@ export default function Panel({ usuario, alSalir, alPerderSesion }) {
   // La presencia por MQTT (Last Will) manda; si todavía no llegó, se usa el webhook de conexión
   const servicio =
     estado.presencia.find((p) => p.nombre === "servicio") ??
-    estado.dispositivos.find((d) => d.clientid === "servicio");
+    estado.dispositivos.find((d) => d.clientid === "servicio-central");
 
   const [, , titulo, bajada] =SECCIONES.find(([id]) => id === seccion);
 
