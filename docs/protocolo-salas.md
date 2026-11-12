@@ -2,7 +2,7 @@
 
 > **Qué es:** la parte del protocolo que falta para las salas (Hall y Servidores): qué publica cada uno, en qué topic y con qué formato. Sale de la maqueta `salas-iso` y de "Arquitectura del sistema" (secciones 3 y 7).
 > **Para quién:** quien hace el servicio de salas, el servicio central (publica quién está dentro), la app y el dashboard.
-> **Estado:** propuesta del 06/11/2026 para revisar entre todos. Cuando se apruebe, pasa al documento del protocolo como sección nueva.
+> **Estado:** implementado por el servicio central, el servicio de salas y la app. Nació como propuesta el 06/11/2026; el ACL vigente está en [acl.conf](acl.conf).
 > **Convenciones:** las mismas del protocolo: JSON, fechas en hora local sin zona (`2026-11-06T20:31:05`), QoS 1 salvo la telemetría, client ID = usuario MQTT.
 
 ---
