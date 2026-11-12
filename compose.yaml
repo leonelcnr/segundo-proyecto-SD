@@ -6,11 +6,11 @@ services:
     restart: unless-stopped
 
     environment:
-      MYSQL_ROOT_PASSWORD: root123
+      MYSQL_ROOT_PASSWORD: a5wTJxnyhW
       MYSQL_ROOT_HOST: "%"
       MYSQL_DATABASE: sp-sensores
-      MYSQL_USER: alumno
-      MYSQL_PASSWORD: alumno123
+      MYSQL_USER: admin-bd-proyecto
+      MYSQL_PASSWORD: TMjJEKVznG7ZSAi
 
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uroot", "-proot123"]
@@ -28,7 +28,7 @@ services:
       - red-sp
 
   emqx:
-    image: emqx/emqx:latest
+    image: emqx/emqx:6.3.2
     container_name: emqx-lab
     restart: unless-stopped
 
@@ -39,8 +39,14 @@ services:
       - "8084:8084"    # MQTT WebSocket TLS
       - "18083:18083"  # Dashboard EMQX
 
+    environment:
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CERTFILE: /opt/emqx/etc/certs/propios/broker.crt
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__KEYFILE: /opt/emqx/etc/certs/propios/broker.key
+      EMQX_LISTENERS__SSL__DEFAULT__SSL_OPTIONS__CACERTFILE: /opt/emqx/etc/certs/propios/ca.crt
+
     volumes:
       - emqx_data:/opt/emqx/data
+      - ./certs:/opt/emqx/etc/certs/propios:ro
 
     networks:
       - red-sp
@@ -50,21 +56,6 @@ services:
 
     depends_on:
       - mysql
-
-  phpmyadmin:
-    image: phpmyadmin
-    restart: always
-    ports:
-      - 8080:80
-    environment:
-      - PMA_HOST=mysql
-      - PMA_ARBITRARY=1
-    networks:
-      - red-sp
-
-    depends_on:
-      mysql:
-        condition: service_healthy
 
 volumes:
   mysql_data:
