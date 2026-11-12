@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Puerta NFC</string>
+    <string name="servicio_hce">Credencial de las puertas del edificio</string>
+    <string name="grupo_aid">Puertas del edificio</string>
+</resources>

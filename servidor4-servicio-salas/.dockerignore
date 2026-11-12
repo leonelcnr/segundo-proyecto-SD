@@ -1,0 +1,7 @@
+.env
+.env.*
+secretos/
+certs/
+pruebas/
+**/__pycache__
+*.md

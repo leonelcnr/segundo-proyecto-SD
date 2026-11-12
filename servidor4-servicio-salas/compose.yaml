@@ -1,0 +1,42 @@
+name: servidor4-salas
+
+services:
+  servicio-salas:
+    build: .
+    image: servidor4/servicio-salas:1.0
+    container_name: servicio-salas
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      CA_ARCHIVO: /certs/ca.crt
+      MQTT_CLAVE_ARCHIVO: /run/secrets/mqtt_clave
+      ESTADO_ARCHIVO: /datos/estado.json
+      SALUD_ARCHIVO: /tmp/salud.json
+      TZ: America/Argentina/Buenos_Aires
+    secrets:
+      - mqtt_clave
+    volumes:
+      - ./certs/ca.crt:/certs/ca.crt:ro
+      - datos:/datos
+    read_only: true
+    tmpfs:
+      - /tmp:size=1m
+    cap_drop: [ALL]
+    security_opt:
+      - no-new-privileges:true
+    pids_limit: 64
+    mem_limit: 128m
+    cpus: 0.5
+    stop_grace_period: 10s
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+secrets:
+  mqtt_clave:
+    file: ./secretos/mqtt_clave.txt
+
+volumes:
+  datos:

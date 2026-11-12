@@ -9,11 +9,15 @@ por webhooks a un receptor HTTP.
 | Broker EMQX + MySQL (usuarios MQTT) | `compose-servidor-emqx.yaml` | alumno07 (`10.51.2.162`) | – |
 | Servicio central (Python + SQLite) | `servicio-acceso/` | alumno04 | `servicio-central` |
 | Dashboard y receptor de webhooks (Node + React) | `backend-dashboard/` | alumno06 (`10.51.2.183`) | `admin-1` |
-| Puertas (ESP32 con lector NFC) | – | Hardware + Raspberry relay | `puerta-hall`, `puerta-servidores` |
-| Servicio de salas y app del celular | `docs/protocolo-salas.md`, `backend-dashboard/web/salas-iso/` | Pendiente: hoy solo protocolo y maqueta | `servicio-salas`, `celular-N` |
+| Servicio de salas (Python) | `servidor4-servicio-salas/` | alumno08 (`10.51.2.92`) | `servicio-salas` |
+| Puertas (ESP32 con lector NFC) | `puertas-esp32/` | En el edificio, por Wi-Fi | `puerta-hall`, `puerta-servidores` |
+| Relay de las puertas (`socat`) | `relay-raspberry/` | Raspberry Pi, en el Wi-Fi de las puertas y en Tailscale | – |
+| App del celular (Android) | `app-android/` | Teléfono de cada usuario, con Tailscale | `celular-N` |
 
 Documentación: [guía de configuración de EMQX](docs/guia-emqx-dashboard.md) · [ACL](docs/acl.conf) ·
-[protocolo de las salas](docs/protocolo-salas.md).
+[protocolo de las salas](docs/protocolo-salas.md). Cada carpeta de cliente tiene su propio README con la instalación
+completa: [puertas](puertas-esp32/README.md) · [relay](relay-raspberry/README.md) ·
+[servicio de salas](servidor4-servicio-salas/README.md) · [app](app-android/README.md).
 
 Las claves, los `.env` y las claves privadas (`*.key`) **no están en el repo**. `ca.crt` sí: es pública.
 
@@ -93,6 +97,18 @@ docker logs -f receptor-dashboard    # debe decir "MQTT conectado a mqtts://brok
 
 El dashboard se abre en `http://sd-2026.tailb9d8eb.ts.net:18106` (por Tailscale) con el `ADMIN_USER` / `ADMIN_PASSWORD` del `.env`.
 
+### 1.4 Servicio de salas (alumno08)
+
+Es el único dueño del ambiente de las dos salas: simula luz, cortina, aire, temperatura, aire de precisión y energía,
+recibe los pedidos de los celulares, aplica las reglas y publica el estado de cada sala (retenido). El celular sólo pide;
+quién está dentro de cada sala no se le cree al celular: lo publica el servicio central en `acceso/{sitio}/sala/{sala}/ocupantes`.
+
+Corre en Docker Compose, no publica puertos (sólo sale hacia el broker) y guarda el estado de las salas en un volumen.
+La clave MQTT entra como *secret* de Compose, no por `.env`. Necesita el usuario `servicio-salas` en EMQX y sus reglas,
+que ya están en [docs/acl.conf](docs/acl.conf).
+
+Despliegue, variables, reglas de cada dispositivo y cómo probarlo en local: [servidor4-servicio-salas/README.md](servidor4-servicio-salas/README.md).
+
 ---
 
 ## 2. Clientes
@@ -102,7 +118,25 @@ El dashboard se abre en `http://sd-2026.tailb9d8eb.ts.net:18106` (por Tailscale)
 Cada puerta se conecta por TLS al broker con su usuario (`puerta-hall`, `puerta-servidores`) y client ID igual al usuario. Como el ESP32 no corre Tailscale,
 sale por una Raspberry que hace de relay TCP (`socat :8883 → broker`), sin descifrar el TLS.
 
-> <completar (Nehuén): ubicación del firmware, cómo se carga al ESP32 y cómo se configura la Raspberry.>
+| Puerta | Placa | Lector |
+|---|---|---|
+| Hall | ESP32-S3-DevKitC-1 N16R8 | PN532: tarjetas y celulares con la app |
+| Sala de servidores | ESP32-WROOM-32 + LCD 16x2 | RC522: sólo tarjetas |
+
+La puerta no decide quién entra: publica la lectura, espera la orden del servicio central y obedece con LEDs, buzzer y LCD.
+Si no hay servicio, red o respuesta, no abre. Usa sesión limpia: una orden de abrir que llega tarde no se ejecuta.
+
+- Firmware (PlatformIO), cableado, cómo grabarlo y programa de prueba del hardware: [puertas-esp32/README.md](puertas-esp32/README.md).
+- Instalación de la Raspberry (Tailscale, `socat`, mDNS como `relay-puertas.local`) y prueba de todo el camino sin ESP32: [relay-raspberry/README.md](relay-raspberry/README.md).
+
+### App del celular (Android)
+
+Hace tres cosas: es una **credencial NFC** (el teléfono responde al PN532 de la puerta Hall y la puerta lo publica como `CEL-<código>`),
+recibe los **avisos de uso** de sus credenciales con la opción "No fui yo", y **controla las salas** a las que el usuario entró.
+Se conecta por Tailscale (o por el relay, en el Wi-Fi del edificio) con TLS y sesión persistente, así que los avisos que
+llegan con el teléfono desconectado se entregan al volver.
+
+Cómo compilarla, instalarla y configurarla: [app-android/README.md](app-android/README.md).
 
 ### Sin hardware
 
@@ -126,7 +160,10 @@ Para el dashboard, `npm run simular` (en `backend-dashboard/`, con su `.env`) ha
 - Pasar una tarjeta sin permiso en esa puerta pero sí en otra: la solicitud aparece en el dashboard y el admin tiene 30 s para decidir.
 - Pasar una tarjeta desconocida: se levanta la alarma del sitio.
 - Cortar una puerta: el broker publica su Last Will (`offline`) y el dashboard la marca caída.
-- Tests del dashboard: `cd backend-dashboard && npm ci && npm test`.
+- Entrar por el Hall con el celular: la pestaña de la sala se habilita en la app y sus pedidos (luz, cortina, aire) cambian el estado que muestran la app y el dashboard. Un celular que no entró recibe `sin_acceso`.
+- Usar la tarjeta de alguien que tiene la app: a ese celular le llega "¿Fuiste vos?"; *No fui yo* aparece como `uso_indebido` en el dashboard.
+- Cortar el servicio de salas: su Last Will (`offline`) desactiva los controles en la app y en el dashboard.
+- Tests del dashboard: `cd backend-dashboard && npm ci && npm test`. Las reglas de las salas tienen sus propias pruebas (ver su README).
 
 ## 4. Datos para conectarse (docentes)
 

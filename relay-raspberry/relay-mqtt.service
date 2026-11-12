@@ -1,0 +1,15 @@
+[Unit]
+Description=Relay MQTT/TLS de las puertas hacia el broker por Tailscale
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+# Reenvía los bytes tal cual: el TLS va de punta a punta entre el ESP32 y EMQX
+EnvironmentFile=/etc/default/relay-mqtt
+ExecStart=/usr/bin/socat -d -d TCP-LISTEN:8883,fork,reuseaddr,keepalive TCP:${BROKER}:${BROKER_PUERTO},keepalive,connect-timeout=5
+Restart=always
+RestartSec=2
+DynamicUser=yes
+
+[Install]
+WantedBy=multi-user.target
