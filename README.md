@@ -38,8 +38,8 @@ Requisitos en cada servidor: Docker con el plugin `compose`. Se levanta cada par
    docker compose -f compose-servidor-emqx.yaml up -d
    ```
 
-   Levanta `emqx-lab` (broker), `mysql-lab` (MySQL 5.7, usuarios MQTT) y `phpmyadmin`. Todo con `restart: unless-stopped` y
-   volúmenes (`emqx_data`, `mysql_data`), así que sobrevive a un reinicio.
+   Levanta `emqx-lab` (broker), `mysql-lab` (MySQL 5.7, usuarios MQTT) y `phpmyadmin`. `emqx-lab` y `mysql-lab` con `restart: unless-stopped` (`phpmyadmin`
+   con `restart: always`) y volúmenes (`emqx_data`, `mysql_data`), así que sobrevive a un reinicio.
 4. Configurar EMQX desde el panel (`http://<servidor>:18083`). **Cambiar la clave del panel**, que viene con una por defecto:
 
    ```bash
