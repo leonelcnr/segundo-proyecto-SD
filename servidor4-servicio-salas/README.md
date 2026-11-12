@@ -70,9 +70,9 @@ Si el nombre del broker no resuelve dentro del contenedor, agregar en `compose.y
 
 ### En el broker
 
-El usuario `servicio-salas` (con client ID igual al usuario) y las reglas de [`emqx/acl-servicio-salas.conf`](emqx/acl-servicio-salas.conf) tienen que estar cargados en EMQX. Las suscripciones con comodines están autorizadas con `{eq, …}`, así que el servicio se suscribe exactamente a esos filtros y filtra el sitio al recibir.
+El usuario `servicio-salas` (con client ID igual al usuario) y sus reglas del ACL (están en [`docs/acl.conf`](../docs/acl.conf), bloque "Servicio de salas") tienen que estar cargados en EMQX. Las suscripciones con comodines están autorizadas con `{eq, …}`, así que el servicio se suscribe exactamente a esos filtros y filtra el sitio al recibir.
 
-[`emqx/regla-temperatura.sql`](emqx/regla-temperatura.sql) es la regla del motor de reglas que dispara un webhook al receptor cuando la sala de servidores pasa los 27 °C.
+La regla `temperatura` del motor de reglas (SQL en la [sección 5 del protocolo de las salas](../docs/protocolo-salas.md#5-webhook-temperatura-alta)) dispara un webhook al receptor cuando la sala de servidores pasa los 27 °C.
 
 ## Operación
 
