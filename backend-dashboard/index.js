@@ -1,3 +1,4 @@
+const fs = require("node:fs");
 const path = require("node:path");
 const express = require("express");
 const { crearWebhooks } = require("./routes/webhooks");
@@ -56,11 +57,13 @@ if (require.main === module) {
 
   // Sin MQTT_URL el dashboard solo muestra los webhooks: no ve solicitudes ni puede decidir
   if (env.MQTT_URL) {
+    // Se lee una sola vez al arrancar: si falta el archivo, el dashboard no arranca y lo dice
+    const clavePrivada = env.MQTT_JWT_KEY && fs.readFileSync(env.MQTT_JWT_KEY, "utf8");
     mqtt = conectar({
       url: env.MQTT_URL,
       usuario: env.MQTT_USER,
-      // Con MQTT_JWT_SECRET se presenta con un JWT corto (autenticador JWT de EMQX); si no, con MQTT_PASSWORD
-      clave: env.MQTT_JWT_SECRET ? () => jwtMqtt(env.MQTT_USER, env.MQTT_JWT_SECRET) : env.MQTT_PASSWORD,
+      // Con MQTT_JWT_KEY se presenta con un JWT corto firmado con RS256 (autenticador JWT de EMQX); si no, con MQTT_PASSWORD
+      clave: clavePrivada ? () => jwtMqtt(env.MQTT_USER, clavePrivada) : env.MQTT_PASSWORD,
       ca: env.MQTT_CA,
       suscripciones: [...SUSCRIPCIONES, aviso(env.MQTT_USER)],
       alMensaje: (topic, texto) => aplicar(memoria, topic, texto) && avisarCambio(),

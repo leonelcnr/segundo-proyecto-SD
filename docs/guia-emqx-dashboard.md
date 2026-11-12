@@ -90,12 +90,12 @@ Hay **dos autenticadores**, y el orden importa: EMQX los prueba de arriba hacia 
 |---|---|
 | Mecanismo | **JWT** |
 | JWT From | `password` |
-| Algoritmo | **JWT signed using HMAC** (HS256) |
-| Secret | el `MQTT_JWT_SECRET` que te pasamos **por privado** (`openssl rand -hex 32`) |
-| Secret Base64 encoded | **No** |
+| Algoritmo | **JWT signed using public key** (RS256) |
+| Public Key | el contenido de `jwt-publica.pem` que te pasamos (es pública, puede ir por cualquier lado) |
 | Disconnect After Expire | Sí (default) |
 | Verify Claims | `username` = `${username}` |
 
+- **Firma asimétrica, como propone la cátedra:** el dashboard firma con su clave privada (`jwt-privada.key`, que nunca sale de alumno06) y EMQX solo tiene la pública. Aunque alguien lea la configuración del broker, puede verificar tokens pero no fabricarlos.
 - **Verify Claims** es lo que ata el token al usuario: sin eso, el JWT de `admin-1` serviría para entrar como cualquiera.
 - El dashboard firma un JWT nuevo de 1 hora en cada conexión. Cuando vence, EMQX lo desconecta y el dashboard vuelve a entrar con uno nuevo. Es un corte de un segundo, y la sesión persistente guarda los mensajes QoS 1.
 - `admin-1` **no** se crea como usuario: el JWT ya lo identifica.
@@ -193,7 +193,7 @@ Después, borrar esas credenciales del README.
 |---|---|
 | IP o nombre de Tailscale del server del dashboard | Cualquiera |
 | `WEBHOOK_TOKEN` (el valor del header `X-Token`) | **Por privado** |
-| `MQTT_JWT_SECRET` (el secreto del autenticador JWT) | **Por privado** |
+| `jwt-publica.pem` (la clave pública del autenticador JWT) | Cualquiera (es pública) |
 
 Con eso, nuestro `.env` queda así:
 
@@ -202,7 +202,7 @@ IP_LAN=10.51.2.183
 IP_BROKER=10.51.2.162
 MQTT_URL=mqtts://broker.puertas:8883
 MQTT_USER=admin-1
-MQTT_JWT_SECRET=<el mismo del autenticador JWT>
+MQTT_JWT_KEY=certs/jwt-privada.key
 MQTT_CA=certs/ca.crt
 ```
 
@@ -218,8 +218,8 @@ MQTT_CA=certs/ca.crt
 | Lo que se ve | Causa | Arreglo |
 |---|---|---|
 | `Connection refused: Not authorized` | El usuario no existe o la conexión fue anónima | Paso 3 |
-| `Connection refused: Bad username or password` | Clave equivocada, o JWT vencido o de otro usuario | Revisar la clave, o que `MQTT_JWT_SECRET` y Verify Claims estén bien |
-| `Connection refused: Not authorized` con el dashboard | El secreto del JWT no coincide, o el autenticador JWT no está | Copiar el secreto de nuevo; paso 3.1 |
+| `Connection refused: Bad username or password` | Clave equivocada, o JWT vencido o de otro usuario | Revisar la clave, o que la clave pública del autenticador y Verify Claims estén bien |
+| `Connection refused: Not authorized` con el dashboard | La clave pública de EMQX no es la de `MQTT_JWT_KEY`, o el autenticador JWT no está | Pegar de nuevo `jwt-publica.pem`; paso 3.1 |
 | `ERR_TLS_CERT_ALTNAME_INVALID` | El dashboard se conectó por IP o con un nombre que no está en el certificado | Usar `broker.puertas` con `IP_BROKER` (sección Red) |
 | `SELF_SIGNED_CERT_IN_CHAIN` | El cliente no tiene la `ca.crt` correcta | Pasar `ca.crt` |
 | `Invalid header flag bits` | Conexión sin TLS al puerto TLS | Usar `mqtts://` |

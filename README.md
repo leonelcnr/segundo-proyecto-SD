@@ -87,7 +87,7 @@ Completar `.env`. Los valores de abajo se generan con `openssl rand -hex 32` y s
 | `JWT_SECRET` | Firma de la cookie de sesión del dashboard |
 | `MQTT_URL` | `mqtts://broker.puertas:8883` |
 | `MQTT_USER` | `admin-1` |
-| `MQTT_JWT_SECRET` | Mismo secreto que el autenticador JWT de EMQX |
+| `MQTT_JWT_KEY` | Clave privada RSA con la que se firma el JWT (RS256). Su pública va al autenticador JWT de EMQX; cómo generarlas, en `.env.example` |
 | `IP_LAN`, `PUERTO`, `IP_BROKER` | Ver `.env.example` |
 
 ```bash

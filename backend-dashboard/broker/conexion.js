@@ -8,9 +8,11 @@ const jwt = require("jsonwebtoken");
 const DURACION_JWT = 60 * 60; // segundos
 
 
-// JWT para el autenticador JWT de EMQX (HS256 con el secreto compartido). EMQX verifica la firma,
+// JWT para el autenticador JWT de EMQX, firmado con RS256: el dashboard tiene la clave privada y EMQX solo
+// la pública, así que el broker puede verificar tokens pero no fabricarlos. EMQX verifica la firma,
 // que no esté vencido y que el claim username coincida con el usuario de la conexión.
-const jwtMqtt = (usuario, secreto) => jwt.sign({ username: usuario }, secreto, { expiresIn: DURACION_JWT });
+const jwtMqtt = (usuario, clavePrivada) =>
+  jwt.sign({ username: usuario }, clavePrivada, { algorithm: "RS256", expiresIn: DURACION_JWT });
 
 
 // alMensaje(topic, texto) se llama con cada mensaje de las suscripciones.

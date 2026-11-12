@@ -16,8 +16,8 @@ services:
       - "broker.puertas:${IP_BROKER:-127.0.0.1}"
     volumes:
       - dashboard-data:/app/data
-      # La CA va dentro de la imagen igual (COPY .), esto deja cambiarla sin reconstruir
-      - ./certs/ca.crt:/app/certs/ca.crt:ro
+      # ca.crt y la clave privada del JWT (los *.key no entran en la imagen: .dockerignore)
+      - ./certs:/app/certs:ro
 
 volumes:
   dashboard-data:
