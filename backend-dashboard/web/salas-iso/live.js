@@ -541,7 +541,53 @@ if (touring) setTimeout(() => setTour(true), 900); else setTour(false);
 const ocupantesAntes = { hall: 0, servidores: 0 };
 const eventosVistos = new Set();
 
+// ===================== nombres flotantes =====================
+// Un cartel por ocupante, parado en un lugar libre del piso de su sala (z = 8 es el piso técnico)
+const LUGARES = {
+  hall: [[120, 60, 0], [110, -60, 0], [30, 60, 0], [205, 60, 0]],
+  servidores: [[-96, 44, 8], [-175, 20, 8], [-40, 90, 8], [-110, -30, 8]],
+};
+const NOMBRE_SALA = { hall: "Hall", servidores: "Servidores" };
+const capaGente = document.createElement("div");
+capaGente.className = "sl-gente";
+svg.parentNode.append(capaGente);
+const carteles = new Map();
+
+function gente(salas) {
+  const { width, height } = svg.viewBox.baseVal;
+  const vistos = new Set();
+  for (const sala of salas) {
+    const lugares = LUGARES[sala.sala];
+    if (!lugares) continue;
+    // shortcut: 4 lugares por sala; si hay más gente, el último cartel los resume
+    const sobran = sala.ocupantes.length - lugares.length;
+    sala.ocupantes.slice(0, lugares.length).forEach((o, i) => {
+      const resumen = sobran > 0 && i === lugares.length - 1;
+      const clave = resumen ? `${sala.sala}|+` : `${sala.sala}|${o.persona}`; // la persona es la clave: el cartel no se recrea en cada estado
+      vistos.add(clave);
+      let c = carteles.get(clave);
+      if (!c) {
+        c = document.createElement("div");
+        c.className = "sl-tag";
+        c.innerHTML = `<div class="sl-tag-flota"><div class="sl-tag-pill"><i></i><span><b></b><small></small></span></div></div><div class="sl-tag-pie"></div>`;
+        capaGente.append(c);
+        carteles.set(clave, c);
+      }
+      const nombre = resumen ? `${sobran + 1} personas más` : String(o.persona ?? "?");
+      c.dataset.rol = resumen ? "" : o.rol ?? "";
+      c.querySelector("i").textContent = resumen ? "+" : nombre.trim()[0]?.toUpperCase() ?? "?";
+      c.querySelector("b").textContent = nombre;
+      c.querySelector("small").textContent = NOMBRE_SALA[sala.sala] + (c.dataset.rol === "admin" ? " · admin" : "");
+      const [x, y] = iso(lugares[i], P);
+      c.style.left = (x / width) * 100 + "%";
+      c.style.top = (y / height) * 100 + "%";
+    });
+  }
+  for (const [clave, c] of carteles) if (!vistos.has(clave)) { c.remove(); carteles.delete(clave); }
+}
+
 function aplicarVivo({ salas = [], eventos = [] }) {
+  gente(salas);
 
   const t = now();
   for (const sala of salas) {

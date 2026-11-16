@@ -517,8 +517,8 @@ export function figure() {
   ]);
   const body = [
     `<defs>${k1.clip}
-      <radialGradient id="sl-pool"><stop offset="0" style="stop-color:var(--sl-pool);stop-opacity:.75"/><stop offset=".55" style="stop-color:var(--sl-pool);stop-opacity:.28"/><stop offset="1" style="stop-color:var(--sl-pool);stop-opacity:0"/></radialGradient>
-      <radialGradient id="sl-glow"><stop offset="0" style="stop-color:var(--sl-pool);stop-opacity:.7"/><stop offset="1" style="stop-color:var(--sl-pool);stop-opacity:0"/></radialGradient>
+      <radialGradient id="sl-pool"><stop offset="0" style="stop-color:var(--sl-pool);stop-opacity:.95"/><stop offset=".55" style="stop-color:var(--sl-pool);stop-opacity:.5"/><stop offset="1" style="stop-color:var(--sl-pool);stop-opacity:0"/></radialGradient>
+      <radialGradient id="sl-glow"><stop offset="0" style="stop-color:var(--sl-pool);stop-opacity:.95"/><stop offset="1" style="stop-color:var(--sl-pool);stop-opacity:0"/></radialGradient>
       <linearGradient id="sl-sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--sl-sky-a)"/><stop offset="1" style="stop-color:var(--sl-sky-b)"/></linearGradient>
     </defs>`,
     base(),
